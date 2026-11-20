@@ -216,3 +216,31 @@ list.kr-files > row:hover { background: alpha(@k_realce, 0.04); }
 .kr-option { border: 1px solid @k_border; border-radius: 6px; padding: 12px 14px; }
 .kr-option.selected { background: alpha(@k_accent, 0.06); border-color: alpha(@k_accent, 0.6); }
 .kr-history-row { padding: 12px 14px; }
+
+/* SSH */
+button.kr-chip { all: unset; background: @k_control; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: @k_text2; }
+button.kr-chip:hover { color: @k_text; }
+button.kr-chip:checked { background: alpha(@k_accent, 0.18); color: @k_accent_text; }
+.kr-list { padding: 4px; }
+.kr-host-row { padding: 10px 12px; border-radius: 4px; min-height: 36px; }
+.kr-host-row:hover { background: alpha(@k_realce, 0.03); }
+.kr-host-row.selected { background: alpha(@k_accent, 0.10); }
+.kr-reach { min-width: 7px; min-height: 7px; border-radius: 99px; background: @k_dim; }
+.kr-reach.ok { background: @k_teal; }
+.kr-reach.down { background: @k_coral; }
+.kr-mono { font-family: "JetBrains Mono", monospace; font-size: 12px; color: @k_text2; }
+.kr-mono.accent { color: @k_accent_text; }
+.kr-mono.coral { color: @k_coral; }
+.kr-codebox { background: @k_field; border-radius: 4px; padding: 10px; }
+.kr-path { background: @k_field; border-radius: 4px; padding: 8px 10px; }
+.kr-kv { background: @k_field; border-radius: 6px; padding: 12px; }
+.kr-known { background: @k_field; border-radius: 6px; padding: 10px 12px; }
+.kr-howto { background: alpha(@k_coral, 0.08); border-radius: 6px; padding: 12px; }
+.kr-note-box { background: @k_mensagem; border-radius: 6px; padding: 10px 12px; }
+.kr-editor { padding: 18px; }
+.kr-table { padding: 4px 0; }
+.kr-table-head { padding: 8px 16px; border-bottom: 1px solid @k_border; }
+.kr-table-row { padding: 10px 16px; border-bottom: 1px solid alpha(@k_border, 0.6); }
+.kr-table-row:hover { background: alpha(@k_realce, 0.03); }
+.kr-pad { padding: 12px 16px; }
+window.kr-dialog.kr-danger { border: 1px solid @k_coral; }

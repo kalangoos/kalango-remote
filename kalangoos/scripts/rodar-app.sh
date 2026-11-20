@@ -79,6 +79,6 @@ json.dump(hosts, open(f"{d}/config/kalango/remote/hosts.json", "w"), ensure_asci
 hk, _ = key("host-app-prod"); hk2, _ = key("host-loja", "rsa")
 open(f"{d}/config/kalango/remote/known_hosts", "w").write(f"203.0.113.24 {' '.join(hk.split()[:2])}\n198.51.100.7 {' '.join(hk2.split()[:2])}\n")
 PY
-  export XDG_CONFIG_HOME="$D/config" XDG_CACHE_HOME="$D/cache" XDG_DATA_HOME="$D/data" KALANGO_REMOTE_APP_ID=os.kalango.RemoteDemo KALANGO_REMOTE_COFRE=arquivo SSH_AUTH_SOCK= LANG=pt_BR.UTF-8 LANGUAGE=pt_BR
+  export XDG_CONFIG_HOME="$D/config" XDG_CACHE_HOME="$D/cache" XDG_DATA_HOME="$D/data" KALANGO_REMOTE_APP_ID=os.kalango.RemoteDemo KALANGO_REMOTE_INSTANCE="${KALANGO_REMOTE_INSTANCE:-demo}" KALANGO_REMOTE_COFRE=arquivo SSH_AUTH_SOCK= LANG=pt_BR.UTF-8 LANGUAGE=pt_BR
 fi
 exec "$PWD/target/debug/kalango-remote" "$@"

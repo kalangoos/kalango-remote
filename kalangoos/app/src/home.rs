@@ -23,6 +23,10 @@ enum ShareState {
     Sharing,
     NoInternet,
     Failed(String),
+    /// the core exited before answering (the first line of its stderr, or its exit code)
+    CoreFailed(String),
+    /// another Kalango Remote already shares this computer (its core holds the IPC sockets)
+    AlreadySharing,
 }
 
 #[derive(Default)]
@@ -51,6 +55,9 @@ struct ShareCard {
     time_fill: gtk::Box,
     failed_text: gtk::Label,
     noinet_text: gtk::Label,
+    core_title: gtk::Label,
+    core_text: gtk::Label,
+    core_retry: gtk::Button,
     opening_step: gtk::Label,
     ask: gtk::Switch,
     unattended: gtk::Switch,
@@ -65,6 +72,12 @@ pub struct Home {
     right: gtk::Box,
     share: ShareCard,
     state: RefCell<ShareState>,
+    /// the core of this share said something (it started); an exit before that is a core error
+    core_answered: Cell<bool>,
+    /// core errors in a row (each new try waits longer)
+    core_failures: Cell<u32>,
+    /// unix seconds before which "Try again" stays off after a core error
+    retry_at: Rc<Cell<u64>>,
     info: RefCell<ShareInfo>,
     core: RefCell<Option<Core>>,
     incoming: RefCell<Option<Rc<Incoming>>>,
@@ -313,6 +326,23 @@ impl ShareCard {
         failed.append(&frow);
         stack.add_named(&failed, Some("failed"));
 
+        // the core did not open
+        let nocore = ui::vbox(10, "");
+        let core_title = ui::label(tr("The Kalango Remote core did not open."), "kr-big-title");
+        nocore.append(&core_title);
+        let core_text = ui::para("", "kr-caption");
+        nocore.append(&core_text);
+        let crow = ui::hbox(8, "");
+        let core_retry = ui::button(tr("Try again"), Some(("reiniciar", "k_text")), "");
+        core_retry.set_hexpand(true);
+        core_retry.set_widget_name("retry");
+        crow.append(&core_retry);
+        let agent3 = ui::button(tr("Ask the agent"), Some(("spark", "k_accent")), "agent");
+        agent3.set_widget_name("ask-agent");
+        crow.append(&agent3);
+        nocore.append(&crow);
+        stack.add_named(&nocore, Some("nocore"));
+
         root.append(&ui::hbox(0, "kr-div"));
         let (ask, unattended, unattended_sub) = switch_rows(&root);
         ShareCard {
@@ -330,6 +360,9 @@ impl ShareCard {
             time_fill,
             failed_text,
             noinet_text,
+            core_title,
+            core_text,
+            core_retry,
             opening_step,
             ask,
             unattended,
@@ -482,6 +515,9 @@ impl Home {
             right,
             share,
             state: RefCell::new(ShareState::Idle),
+            core_answered: Cell::new(false),
+            core_failures: Cell::new(0),
+            retry_at: Rc::new(Cell::new(0)),
             info: RefCell::new(ShareInfo::default()),
             core: RefCell::new(None),
             incoming: RefCell::new(None),
@@ -715,6 +751,20 @@ impl Home {
                     &[("ip", ip)],
                 ));
             }
+            ShareState::CoreFailed(why) => {
+                self.share.stack.set_visible_child_name("nocore");
+                self.share.set_badge(tr("core stopped"), "coral");
+                self.share.core_title.set_text(tr("The Kalango Remote core did not open."));
+                self.share.core_text.set_text(why);
+                self.retry_countdown();
+            }
+            ShareState::AlreadySharing => {
+                self.share.stack.set_visible_child_name("nocore");
+                self.share.set_badge(tr("already sharing"), "gold");
+                self.share.core_title.set_text(tr("This computer is already shared by another Kalango Remote."));
+                self.share.core_text.set_text(tr("Only one can receive connections at a time. Stop sharing in the other window (or close it) and try again here."));
+                self.retry_countdown();
+            }
             ShareState::Failed(why) => {
                 self.share.stack.set_visible_child_name("failed");
                 self.share.set_badge(tr("tunnel failed"), "coral");
@@ -745,6 +795,7 @@ impl Home {
             args.push("--ask".into());
         }
         *self.info.borrow_mut() = ShareInfo { lan, ..Default::default() };
+        self.core_answered.set(false);
         let h = Rc::downgrade(self);
         match Core::spawn(&args, move |m| {
             if let Some(h) = h.upgrade() {
@@ -760,7 +811,43 @@ impl Home {
                 });
                 self.set_state(ShareState::Opening);
             }
-            Err(e) => self.set_state(ShareState::Failed(e.to_string())),
+            Err(e) => self.core_failed(format!("{}: {e}", crate::core::core_path().display())),
+        }
+    }
+
+    /// The core exited before answering: say so with its own words, and make each new try wait longer
+    /// (2, 4, 8… s up to 30) so a core that cannot start is not restarted in a loop.
+    fn core_failed(&self, why: String) {
+        let n = self.core_failures.get().saturating_add(1);
+        self.core_failures.set(n);
+        let wait = 2u64.saturating_pow(n.min(5)).min(30);
+        self.retry_at.set(store::now() + wait);
+        self.set_state(ShareState::CoreFailed(why));
+    }
+
+    /// The "Try again" of the core error waits for `retry_at`, counting down on the button.
+    fn retry_countdown(&self) {
+        let b = self.share.core_retry.clone();
+        let at = self.retry_at.clone();
+        let update = move || {
+            let left = at.get().saturating_sub(store::now());
+            let label = b.child().and_then(|r| r.last_child()).and_then(|l| l.downcast::<gtk::Label>().ok());
+            b.set_sensitive(left == 0);
+            if let Some(l) = label {
+                if left == 0 {
+                    l.set_text(tr("Try again"));
+                } else {
+                    l.set_text(&trf("Try again in {n} s", &[("n", left.to_string())]));
+                }
+            }
+            if left == 0 {
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        };
+        if update() == glib::ControlFlow::Continue {
+            glib::timeout_add_seconds_local(1, update);
         }
     }
 
@@ -790,14 +877,24 @@ impl Home {
         let v = match m {
             Msg::Event(v) => v,
             Msg::Frame(_) => return,
-            Msg::Exited(_) => {
-                self.core.borrow_mut().take();
+            Msg::Exited(exit) => {
+                let ours = self.core.borrow_mut().take().is_some();
+                if ours && !self.core_answered.get() && *self.state.borrow() == ShareState::Opening {
+                    let why = if exit.first_error.is_empty() {
+                        trf("It exited with code {code}.", &[("code", exit.code.map_or("?".into(), |c| c.to_string()))])
+                    } else {
+                        exit.first_error
+                    };
+                    self.core_failed(why);
+                    return;
+                }
                 if matches!(*self.state.borrow(), ShareState::Sharing | ShareState::Opening) {
                     self.set_state(ShareState::Idle);
                 }
                 return;
             }
         };
+        self.core_answered.set(true);
         let s = |k: &str| v[k].as_str().unwrap_or("").to_owned();
         match v["event"].as_str().unwrap_or("") {
             "listening" => {
@@ -822,6 +919,15 @@ impl Home {
             "tunnel" => {
                 self.info.borrow_mut().link = s("link");
                 self.begin_shared();
+            }
+            "error" if v["kind"] == "already_sharing" => {
+                if let Some(c) = self.core.borrow_mut().take() {
+                    c.stop();
+                }
+                let n = self.core_failures.get().saturating_add(1);
+                self.core_failures.set(n);
+                self.retry_at.set(store::now() + 2u64.saturating_pow(n.min(5)).min(30));
+                self.set_state(ShareState::AlreadySharing);
             }
             "tunnel_error" => {
                 let text = s("text");
@@ -875,6 +981,7 @@ impl Home {
         drop(i);
         self.share.pass_shown.set(false);
         self.show_password_value();
+        self.core_failures.set(0);
         self.set_state(ShareState::Sharing);
         // the clock: once a second while sharing
         let h = Rc::downgrade(self);

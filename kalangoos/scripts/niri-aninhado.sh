@@ -29,7 +29,12 @@ env -u WAYLAND_DISPLAY DISPLAY="$DISP" __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share
 NP=$!
 trap 'kill $NP ${XP:-} 2>/dev/null' EXIT
 for _ in $(seq 40); do grep -q "listening on Wayland socket" "$SAIDA/niri.log" && break; sleep 0.5; done
-S=$(grep -o "listening on Wayland socket: [^ ]*" "$SAIDA/niri.log" | awk '{print $NF}')
+S=
+for _ in $(seq 20); do
+  S=$(sed 's/\x1b\[[0-9;]*m//g' "$SAIDA/niri.log" | grep -o "listening on Wayland socket: [^ ]*" | awk '{print $NF}')
+  [ -n "$S" ] && break
+  sleep 0.25
+done
 # a saída do niri aninhado segue o tamanho da janela X dele
 W=$(DISPLAY="$DISP" xdotool search --name "^niri$" | head -1)
 [ -n "$W" ] && DISPLAY="$DISP" xdotool windowsize "$W" "${TAM%x*}" "${TAM#*x}" && sleep 1

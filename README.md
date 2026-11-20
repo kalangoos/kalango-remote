@@ -1,4 +1,23 @@
 <p align="center">
+  <img src="kalangoos/logo.png" alt="Kalango Remote" width="280">
+</p>
+
+# Kalango Remote
+
+O acesso remoto nativo do [KalangoOS](https://kalangoos.com): controlar outro computador, compartilhar a tela e
+acessar servidores por SSH e Mosh, conectando pelo Cloudflare (um túnel temporário, sem domínio nem servidor próprio)
+ou direto na mesma rede.
+
+- **Base:** um fork do [RustDesk](https://github.com/rustdesk/rustdesk). As mudanças do KalangoOS ficam no ramo
+  `kalangoos`; o `master` acompanha o RustDesk.
+- **Licença:** AGPL-3.0, a mesma do RustDesk (veja [LICENCE](LICENCE)).
+- **Estado:** em desenho. As telas estão no Design System do KalangoOS; o código vem a seguir.
+
+---
+
+O README original do RustDesk segue abaixo.
+
+<p align="center">
   <img src="res/logo-header.svg" alt="RustDesk - Your remote desktop"><br>
   <a href="#raw-steps-to-build">Build</a> •
   <a href="#how-to-build-with-docker">Docker</a> •

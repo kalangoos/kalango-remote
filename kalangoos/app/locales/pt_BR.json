@@ -290,6 +290,7 @@
  "cloudflared is not installed: sharing through Cloudflare will not open": "cloudflared não está instalado: compartilhar pelo Cloudflare não vai abrir",
  "cloudflared {v} installed · no account · no tunnel open": "cloudflared {v} instalado · sem conta · nenhum túnel aberto",
  "cloudflared · asking for a temporary address": "cloudflared · pedindo um endereço temporário",
+ "tunnel open · waiting for its address to answer": "túnel aberto · esperando o endereço responder",
  "controlling": "controlando",
  "copy and paste between the two": "copiar e colar entre os dois",
  "default": "padrão",

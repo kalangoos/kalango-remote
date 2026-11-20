@@ -922,6 +922,11 @@ impl Home {
                     self.begin_shared();
                 }
             }
+            // the tunnel is up; its address still has to answer in DNS before the link works (up to ~30 s): say so,
+            // or the card looks stuck on "asking for a temporary address"
+            "tunnel_ready" if *self.state.borrow() == ShareState::Opening => {
+                self.share.opening_step.set_text(tr("tunnel open · waiting for its address to answer"));
+            }
             "tunnel" => {
                 self.info.borrow_mut().link = s("link");
                 self.begin_shared();

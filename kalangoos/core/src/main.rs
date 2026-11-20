@@ -44,8 +44,9 @@ fn text_mode() -> bool {
 fn emit(out: &Out, v: Value) {
     let mut o = out.lock().unwrap();
     let res = if text_mode() { writeln!(o, "{v}").and_then(|_| o.flush()) } else { wire::write_json(&mut *o, &v) };
-    if res.is_err() {
+    if let Err(e) = res {
         // the app is gone; nothing left to do for
+        log::info!("serve: the app stopped reading ({e}); exiting");
         std::process::exit(0);
     }
 }
@@ -238,6 +239,7 @@ fn serve(args: &[String]) -> i32 {
             }
         }
         // the app closed: stop sharing
+        log::info!("serve: the app closed its commands (stdin); exiting");
         std::process::exit(0);
     });
 

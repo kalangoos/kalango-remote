@@ -879,11 +879,17 @@ impl Home {
             Msg::Frame(_) => return,
             Msg::Exited(exit) => {
                 let ours = self.core.borrow_mut().take().is_some();
-                if ours && !self.core_answered.get() && *self.state.borrow() == ShareState::Opening {
-                    let why = if exit.first_error.is_empty() {
+                if ours {
+                    eprintln!("kalango-remote: o núcleo saiu (código {:?}): {}", exit.code, exit.last_error);
+                }
+                // still opening (with or without a first answer): never back to the start without a word
+                if ours && *self.state.borrow() == ShareState::Opening {
+                    // before any answer the first line says why (a missing library…); later, the last one
+                    let line = if self.core_answered.get() { exit.last_error } else { exit.first_error };
+                    let why = if line.is_empty() {
                         trf("It exited with code {code}.", &[("code", exit.code.map_or("?".into(), |c| c.to_string()))])
                     } else {
-                        exit.first_error
+                        line
                     };
                     self.core_failed(why);
                     return;

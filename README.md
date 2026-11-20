@@ -38,7 +38,9 @@ Em desenvolvimento, já usável entre dois computadores Linux. O que funciona e 
 - **Conectar** por link (de qualquer lugar, sem precisar do `cloudflared` deste lado) ou por código (na mesma rede),
   sempre **cifrado de ponta a ponta**: o convite leva a identidade de quem compartilha e outra chave é recusada.
 - **Sessão** com a tela remota, barra que se esconde, qualidade, escala, chat, transferência de arquivos e
-  reconexão. No KalangoOS (niri), a captura é por `wlr-screencopy` e o controle por teclado e ponteiro virtuais.
+  reconexão. No KalangoOS (niri), a captura é por `wlr-screencopy` e o controle por teclado e ponteiro virtuais —
+  só para o núcleo do Kalango Remote, e só depois que a pessoa aprovou (o `kalangod` dá a permissão ao niri).
+- **Parar** a qualquer momento: o botão no aviso ou **Esc Esc** em qualquer janela (no niri do KalangoOS).
 - **SSH**: servidores em grupos com herança, importar `~/.ssh`, chaves no chaveiro do sistema, impressão digital
   conferida antes de conectar (chave trocada é bloqueada), encaminhamentos de porta. As sessões abrem no Terminal do
   KalangoOS (contrato em [`docs/HOSTS.md`](docs/HOSTS.md); teste com `kalangoos/scripts/testar-ssh.sh`).

@@ -47,6 +47,40 @@ impl Incoming {
         }
     }
 
+    fn core_pid(&self) -> Option<u32> {
+        let mut pid = None;
+        if let Some(h) = self.home.upgrade() {
+            h.with_core(|c| pid = c.pid());
+        }
+        pid
+    }
+
+    /// Before a session sees anything: KalangoOS's niri gives screen capture (and, with `control`, the pointer and
+    /// the keyboard) only to processes kalangod allows (niri patch 0008). Outside KalangoOS there is no kalangod
+    /// and nothing to ask for.
+    fn grant(&self, control: bool) {
+        let Some(pid) = self.core_pid() else {
+            eprintln!("kalango-remote: permissão de controle remoto: o núcleo não está rodando");
+            return;
+        };
+        match crate::kalangod::grant(pid, control) {
+            Ok(()) => eprintln!("kalango-remote: permissão de controle remoto dada ao núcleo {pid} (controle: {control})"),
+            Err(e) => eprintln!("kalango-remote: permissão de controle remoto: {e}"),
+        }
+    }
+
+    fn revoke(&self) {
+        if let Some(pid) = self.core_pid() {
+            let _ = crate::kalangod::revoke(pid);
+        }
+    }
+
+    /// Allows the connection `id`, the permission first.
+    fn authorize(&self, id: i32, keyboard: bool, clipboard: bool, audio: bool, file: bool) {
+        self.grant(keyboard);
+        self.send(json!({"cmd": "authorize", "id": id, "keyboard": keyboard, "clipboard": clipboard, "audio": audio, "file": file}));
+    }
+
     pub fn on_event(self: &Rc<Incoming>, v: &Value) {
         let id = v["id"].as_i64().unwrap_or(0) as i32;
         match v["event"].as_str().unwrap_or("") {
@@ -57,6 +91,8 @@ impl Incoming {
                         r.dialog.destroy();
                     }
                     if !self.active.borrow().contains_key(&id) {
+                        // allowed without our dialog (a fixed password): the permission now
+                        self.grant(v["keyboard"].as_bool().unwrap_or(true));
                         self.start_indicator(id, v);
                     }
                 } else if !self.requests.borrow().contains_key(&id) {
@@ -66,7 +102,7 @@ impl Incoming {
                         w.settings.borrow().allowed.iter().any(|a| a.id == peer && (a.until == 0 || a.until > store::now()))
                     });
                     if allowed {
-                        self.send(json!({"cmd": "authorize", "id": id, "keyboard": true, "clipboard": true, "audio": false, "file": true}));
+                        self.authorize(id, true, true, false, true);
                     } else {
                         self.show_request(id, v);
                     }
@@ -76,7 +112,11 @@ impl Incoming {
                 if let Some(r) = self.requests.borrow_mut().remove(&id) {
                     r.dialog.destroy();
                 }
-                if let Some(a) = self.active.borrow_mut().remove(&id) {
+                let ended = self.active.borrow_mut().remove(&id);
+                if self.active.borrow().is_empty() {
+                    self.revoke();
+                }
+                if let Some(a) = ended {
                     a.banner.destroy();
                     if let Some(o) = a.outline {
                         o.destroy();
@@ -96,6 +136,7 @@ impl Incoming {
     }
 
     pub fn close_all(&self) {
+        self.revoke();
         for (_, r) in self.requests.borrow_mut().drain() {
             r.dialog.destroy();
         }
@@ -199,7 +240,7 @@ impl Incoming {
             let Some(me) = me.upgrade() else { return };
             let Some(r) = me.requests.borrow_mut().remove(&id) else { return };
             if allow {
-                me.send(json!({"cmd": "authorize", "id": id, "keyboard": kb.is_active(), "clipboard": clip.is_active(), "audio": audio.is_active(), "file": file.is_active()}));
+                me.authorize(id, kb.is_active(), clip.is_active(), audio.is_active(), file.is_active());
                 let until = match dur.selected() {
                     1 => Some(store::now() + 3600),
                     2 => Some(0),
@@ -295,6 +336,8 @@ impl Incoming {
         let me = Rc::downgrade(self);
         take.connect_clicked(move |b| {
             if let Some(me) = me.upgrade() {
+                // only the picture from now on: the pointer and keyboard permission goes too
+                me.grant(false);
                 me.send(json!({"cmd": "authorize", "id": id, "keyboard": false}));
                 b.set_visible(false);
             }

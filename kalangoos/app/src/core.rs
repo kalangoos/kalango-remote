@@ -78,6 +78,11 @@ impl Core {
         Ok(Core { stdin: Arc::new(Mutex::new(stdin)), child: Arc::new(Mutex::new(Some(child))) })
     }
 
+    /// The process id (for kalangod's permission), while it runs.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.lock().unwrap().as_ref().map(|c| c.id())
+    }
+
     pub fn send(&self, cmd: &Value) {
         if let Some(w) = self.stdin.lock().unwrap().as_mut() {
             let _ = wire::write_json(w, cmd).and_then(|_| w.flush());

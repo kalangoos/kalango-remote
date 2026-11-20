@@ -210,7 +210,6 @@ impl ShareCard {
         let code_row = ui::hbox(4, "");
         let code = ui::label("", "kr-code display");
         code.set_hexpand(true);
-        code.set_selectable(true);
         code_row.append(&code);
         let copy_code = ui::icon_button("copiar", "k_muted", tr("Copy the code"));
         copy_code.set_widget_name("copy-code");
@@ -831,11 +830,15 @@ impl Home {
                 self.show_password_value();
             }
             "connection" | "removed" | "chat" => {
-                let inc = self.incoming.borrow().clone().unwrap_or_else(|| {
-                    let i = Incoming::new(self);
-                    *self.incoming.borrow_mut() = Some(i.clone());
-                    i
-                });
+                let existing = self.incoming.borrow().clone();
+                let inc = match existing {
+                    Some(i) => i,
+                    None => {
+                        let i = Incoming::new(self);
+                        *self.incoming.borrow_mut() = Some(i.clone());
+                        i
+                    }
+                };
                 inc.on_event(&v);
             }
             _ => {}
@@ -855,6 +858,13 @@ impl Home {
         self.share.link.set_tooltip_text(Some(&i.link));
         if let Some(t) = qr_texture(&i.link) {
             self.share.qr.set_paintable(Some(&t));
+        }
+        // KALANGO_REMOTE_DEBUG: tests read the link from the log; the one-time password only with
+        // KALANGO_REMOTE_DEBUG=senha (a test profile's throwaway password, never in normal use)
+        match std::env::var("KALANGO_REMOTE_DEBUG").as_deref() {
+            Ok("senha") => eprintln!("debug compartilhando: código {} link {} senha {}", i.code, i.link, i.password),
+            Ok(_) => eprintln!("debug compartilhando: código {} link {}", i.code, i.link),
+            Err(_) => {}
         }
         drop(i);
         self.share.pass_shown.set(false);
@@ -994,7 +1004,11 @@ impl Home {
         // first the password (the one-time password the other person sees)
         let pw = self.password.text().to_string();
         if self.connect_stack.visible_child_name().as_deref() != Some("password") || pw.is_empty() {
-            self.password_title.set_text(&trf("Password of {who}", &[("who", target.clone())]));
+            let who = match kalango_remote_proto::Target::parse(&target) {
+                Ok(kalango_remote_proto::Target::Invite(i)) => i.code().unwrap_or(i.host),
+                _ => target.clone(),
+            };
+            self.password_title.set_text(&trf("Password of {who}", &[("who", who)]));
             self.error_label.set_visible(false);
             self.connect_stack.set_visible_child_name("password");
             self.password.grab_focus();
@@ -1143,12 +1157,15 @@ fn fill_grid(grid: &gtk::Box, peers: &[Peer], width: i32, win: &Weak<Window>, em
         return;
     }
     let cols = columns_for(width) as usize;
+    // the design's thumbnail is 206×117 inside a card with 9 px around it
+    let card_w = (width - 12 * (cols as i32 - 1)) / cols as i32;
+    let thumb_h = ((card_w - 18) * 117 / 206).max(60);
     // rows share the width evenly (homogeneous): every card is between 200 and ~255 px
     for chunk in peers.chunks(cols) {
         let row = ui::hbox(12, "");
         row.set_homogeneous(true);
         for p in chunk {
-            row.append(&device_card(p, win));
+            row.append(&device_card(p, win, thumb_h));
         }
         for _ in chunk.len()..cols {
             row.append(&gtk::Box::new(gtk::Orientation::Horizontal, 0));
@@ -1162,7 +1179,7 @@ pub fn columns_for(width: i32) -> i32 {
     ((width + 12) / (200 + 12)).max(1)
 }
 
-fn device_card(p: &Peer, win: &Weak<Window>) -> gtk::Widget {
+fn device_card(p: &Peer, win: &Weak<Window>, thumb_h: i32) -> gtk::Widget {
     let card = ui::vbox(8, "kr-device");
     let thumb = gtk::Overlay::new();
     thumb.add_css_class("kr-thumb");
@@ -1188,10 +1205,8 @@ fn device_card(p: &Peer, win: &Weak<Window>) -> gtk::Widget {
     state.set_margin_start(6);
     state.set_margin_top(6);
     thumb.add_overlay(&state);
-    // the design's thumbnail is 206×117
-    let frame = gtk::AspectFrame::new(0.5, 0.0, 206.0 / 117.0, false);
-    frame.set_child(Some(&thumb));
-    card.append(&frame);
+    thumb.set_size_request(-1, thumb_h);
+    card.append(&thumb);
     let info = ui::hbox(8, "");
     info.set_margin_start(4);
     info.set_margin_end(4);
@@ -1209,19 +1224,61 @@ fn device_card(p: &Peer, win: &Weak<Window>) -> gtk::Widget {
     if p.view_only {
         info.append(&ui::label(tr("view only"), "kr-tag gold"));
     }
-    let star = ui::icon_button(if p.favorite { "estrela-n" } else { "estrela-n" }, if p.favorite { "k_gold" } else { "k_muted" }, tr("Favorite"));
-    star.add_css_class("small");
-    let target = p.target.clone();
-    star.connect_clicked(move |_| {
+    // favourites: the gold star takes it out; recents: a menu (keep as favourite, forget)
+    let refresh = || {
         if let Some(w) = Window::get() {
-            w.peers.borrow_mut().toggle_favorite(&target);
             w.peers.borrow().save();
-            if let Some(h) = w.home.borrow().clone() {
+            let home = w.home.borrow().clone();
+            if let Some(h) = home {
                 h.refresh_devices();
             }
         }
-    });
-    info.append(&star);
+    };
+    if p.favorite {
+        let star = ui::icon_button("estrela-n", "k_gold", tr("Remove from favorites"));
+        star.add_css_class("small");
+        let target = p.target.clone();
+        star.connect_clicked(move |_| {
+            if let Some(w) = Window::get() {
+                w.peers.borrow_mut().toggle_favorite(&target);
+            }
+            refresh();
+        });
+        info.append(&star);
+    } else {
+        let more = gtk::MenuButton::new();
+        more.add_css_class("kr-icon-btn");
+        more.add_css_class("small");
+        more.set_has_frame(false);
+        more.set_valign(Align::Center);
+        more.set_child(Some(&ui::icon("pontos-v", "k_muted", 16)));
+        let pop = gtk::Popover::new();
+        pop.add_css_class("kr-menu");
+        let col = ui::vbox(2, "");
+        let fav = gtk::Button::with_label(tr("Add to favorites"));
+        fav.add_css_class("kr-menu-item");
+        let forget = gtk::Button::with_label(tr("Forget"));
+        forget.add_css_class("kr-menu-item");
+        col.append(&fav);
+        col.append(&forget);
+        pop.set_child(Some(&col));
+        more.set_popover(Some(&pop));
+        let target = p.target.clone();
+        fav.connect_clicked(move |_| {
+            if let Some(w) = Window::get() {
+                w.peers.borrow_mut().toggle_favorite(&target);
+            }
+            refresh();
+        });
+        let target = p.target.clone();
+        forget.connect_clicked(move |_| {
+            if let Some(w) = Window::get() {
+                w.peers.borrow_mut().list.retain(|p| p.target != target);
+            }
+            refresh();
+        });
+        info.append(&more);
+    }
     card.append(&info);
     // a click on the card connects again (same kind as last time)
     let click = gtk::GestureClick::new();

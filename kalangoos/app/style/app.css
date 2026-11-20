@@ -41,7 +41,7 @@ button.kr-winctl:hover { background: @k_raised; }
 .kr-code { font-size: 30px; font-weight: 600; color: @k_text; }
 .kr-linkbox { background: @k_field; border-radius: 4px; padding: 6px 8px; }
 .kr-linktext { font-size: 12px; color: @k_text; }
-.kr-dots { font-size: 18px; letter-spacing: 3px; color: @k_text; }
+.kr-dots { font-size: 13px; letter-spacing: 2px; color: @k_text; }
 .kr-pass { font-size: 15px; font-weight: 600; letter-spacing: 2px; color: @k_text; font-family: "JetBrains Mono", monospace; }
 .kr-qr { background: #FFFFFF; border-radius: 4px; }
 .kr-link-btn, button.kr-link-btn { all: unset; font-size: 12px; font-weight: 600; color: @k_accent_text; }
@@ -140,3 +140,79 @@ button.kr-menu-item:hover { background: alpha(@k_realce, 0.06); }
 scrolledwindow, viewport { background: none; }
 scrollbar { background: none; border: none; }
 scrollbar slider { background: alpha(@k_realce, 0.15); border-radius: 99px; min-width: 6px; min-height: 6px; }
+
+/* títulos e textos */
+.kr-big-title { font-size: 15px; font-weight: 600; color: @k_text; }
+.kr-strong { font-weight: 600; }
+.kr-link-text { font-size: 12px; font-weight: 600; color: @k_accent_text; }
+progressbar.kr-indeterminate trough { background: @k_raised; border-radius: 2px; min-height: 3px; border: none; }
+progressbar.kr-indeterminate progress { background: @k_gold; border-radius: 2px; min-height: 3px; border: none; }
+
+/* listas suspensas e caixas de marcar (os do KalangoOS, não os do tema GTK) */
+dropdown.kr-dropdown > button { all: unset; background: @k_field; border: 1px solid @k_border; border-radius: 4px; min-height: 34px; padding: 0 12px; font-size: 13px; color: @k_text; }
+dropdown.kr-dropdown > button:hover { border-color: @k_divider; }
+dropdown.kr-dropdown popover > contents { background: @k_sunken; border: 1px solid @k_border; border-radius: 6px; padding: 4px; }
+dropdown.kr-dropdown popover row { border-radius: 4px; padding: 6px 8px; color: @k_text; }
+dropdown.kr-dropdown popover row:selected, dropdown.kr-dropdown popover row:hover { background: alpha(@k_realce, 0.06); }
+checkbutton { color: @k_text; font-size: 13px; }
+checkbutton check { min-width: 16px; min-height: 16px; border-radius: 4px; border: 1.5px solid @k_dim; background: none; color: transparent; -gtk-icon-source: none; }
+checkbutton check:checked { background-color: @k_accent; border-color: @k_accent; color: @k_accent_fg; -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); }
+checkbutton check:disabled:checked { opacity: 0.8; }
+checkbutton:disabled label { color: @k_text2; }
+checkbutton.kr-radio radio { min-width: 16px; min-height: 16px; border-radius: 99px; border: 1.5px solid @k_dim; background: none; -gtk-icon-source: none; }
+checkbutton.kr-radio radio:checked { border: 5px solid @k_accent; background: @k_accent_fg; }
+
+/* diálogo de pedido de acesso */
+window.kr-dialog { background: @k_surface; border-radius: 8px; }
+.kr-dialog-body { padding: 20px; }
+.kr-who { background: @k_mensagem; border-radius: 6px; padding: 12px; }
+.kr-avatar { min-width: 44px; min-height: 44px; border-radius: 99px; background: alpha(@k_accent, 0.18); color: @k_accent_text; font-size: 15px; font-weight: 600; }
+.kr-perm { padding: 4px 6px; }
+.kr-warn { background: alpha(@k_gold, 0.08); border: 1px solid alpha(@k_gold, 0.25); border-radius: 6px; padding: 10px 12px; }
+
+/* indicador "está controlando" */
+window.kr-banner-window { background: none; border: none; }
+.kr-controlled { background: @k_sunken; border: 1px solid @k_coral; border-radius: 8px; padding: 6px 8px 6px 14px; }
+.kr-rec-dot { min-width: 8px; min-height: 8px; border-radius: 99px; background: @k_coral; }
+.kr-rec-dot.teal { background: @k_teal; }
+window.kr-outline { background: none; border: 2px solid @k_coral; border-radius: 0; }
+window.kr-outline.teal { border-color: @k_teal; }
+
+/* sessão */
+window.kr-session { background: @k_scrim; }
+.kr-session-bar { background: @k_bg; min-height: 40px; padding: 0 10px; border-bottom: 1px solid @k_border; }
+.kr-screen { background: @k_scrim; }
+.kr-route { border-radius: 4px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
+.kr-route.teal { background: alpha(@k_teal, 0.12); color: @k_teal; }
+.kr-route.blue { background: alpha(@k_blue, 0.12); color: @k_blue; }
+.kr-route.gold { background: alpha(@k_gold, 0.12); color: @k_gold; }
+.kr-floatbar { background: @k_sunken; border: 1px solid @k_border; border-radius: 8px; padding: 4px; }
+menubutton.kr-tool > button, button.kr-tool { all: unset; min-height: 32px; min-width: 32px; padding: 0 8px; border-radius: 4px; font-size: 12px; font-weight: 500; color: @k_text; }
+menubutton.kr-tool > button:hover, button.kr-tool:hover, menubutton.kr-tool > button:checked { background: alpha(@k_realce, 0.06); }
+.kr-stats { padding: 0 8px; font-size: 12px; color: @k_text2; }
+.kr-handle { background: alpha(@k_realce, 0.35); border-radius: 99px; }
+.kr-banner { background: @k_sunken; border: 1px solid @k_gold; border-radius: 8px; padding: 8px 10px 8px 14px; }
+.kr-lost { background: alpha(@k_sunken, 0.96); border: 1px solid @k_border; border-radius: 8px; padding: 22px 28px; }
+.kr-chat { background: @k_sunken; border: 1px solid @k_border; border-radius: 8px; }
+.kr-chat-head { padding: 12px 12px 12px 16px; border-bottom: 1px solid @k_border; }
+.kr-chat-list { padding: 14px; }
+.kr-bubble { background: @k_mensagem; border-radius: 6px; padding: 8px 10px; }
+.kr-bubble.mine { background: @k_raised; }
+entry.kr-chat-entry { all: unset; margin: 10px; padding: 10px 12px; background: @k_field; border: 1px solid @k_border; border-radius: 6px; font-size: 13px; color: @k_text; }
+
+/* transferir arquivos */
+.kr-transfer { background: @k_surface; border: 1px solid @k_border; border-radius: 8px; }
+.kr-transfer-head { padding: 14px 16px; border-bottom: 1px solid @k_border; }
+.kr-pane { padding: 14px 16px; }
+.kr-transfer-mid { padding: 0 12px; background: @k_bg; }
+list.kr-files { background: none; }
+list.kr-files > row { border-radius: 4px; padding: 0; }
+list.kr-files > row:selected { background: @k_mensagem; }
+list.kr-files > row:hover { background: alpha(@k_realce, 0.04); }
+.kr-file-row { padding: 7px 8px; }
+.kr-queue { padding: 12px 16px; border-top: 1px solid @k_border; }
+
+/* ajustes: opções de rede */
+.kr-option { border: 1px solid @k_border; border-radius: 6px; padding: 12px 14px; }
+.kr-option.selected { background: alpha(@k_accent, 0.06); border-color: alpha(@k_accent, 0.6); }
+.kr-history-row { padding: 12px 14px; }

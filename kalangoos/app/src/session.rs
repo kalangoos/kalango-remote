@@ -44,6 +44,9 @@ pub fn classify_message(msgtype: &str, title: &str, text: &str) -> Option<Connec
         return Some(ConnectEvent::Waiting(tr("Waiting for the other person to approve").to_owned()));
     }
     if msgtype.contains("error") {
+        if t.contains("closed manually") || t.contains("denied") || t.contains("rejected") {
+            return Some(ConnectEvent::Failed(tr("The person denied the access.").to_owned()));
+        }
         if t.contains("identity does not match") {
             return Some(ConnectEvent::Failed(
                 tr("This is not the computer of the invite (its key is different). The connection was refused.").to_owned(),
@@ -157,6 +160,10 @@ impl Session {
     }
 
     pub fn close(&self) {
+        if let Some(w) = self.main.upgrade() {
+            let me = self as *const Session;
+            w.sessions.borrow_mut().retain(|s| !std::ptr::eq(Rc::as_ptr(s), me));
+        }
         self.save_thumb();
         if let Some(c) = self.core.borrow_mut().take() {
             c.send(&json!({"cmd": "close"}));
@@ -246,6 +253,9 @@ impl Session {
             self.retries.set(0);
             self.started.set(Some(Instant::now()));
             self.build_view();
+            if let Some(w) = self.main.upgrade() {
+                w.sessions.borrow_mut().push(self.clone());
+            }
             (self.on_event)(ConnectEvent::Connected);
             self.remember();
         }
@@ -1525,6 +1535,7 @@ mod tests {
         ));
         assert!(matches!(classify_message("wait-remote-accept-nook", "Prompt", "Please wait for the remote side to accept"), Some(ConnectEvent::Waiting(_))));
         assert!(classify_message("success", "Successful", "Connected, waiting for image...").is_none());
+        assert!(matches!(classify_message("error", "Connection Error", "Closed manually by the peer"), Some(ConnectEvent::Failed(t)) if t == tr("The person denied the access.")));
     }
 
     #[test]

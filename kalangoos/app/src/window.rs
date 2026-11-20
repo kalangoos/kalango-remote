@@ -30,6 +30,8 @@ pub struct Window {
     pub peers: RefCell<Peers>,
     pub home: RefCell<Option<Rc<Home>>>,
     pub search: gtk::Entry,
+    /// sessions with a window open (the home page lets go of them once connected)
+    pub sessions: RefCell<Vec<Rc<crate::session::Session>>>,
 }
 
 thread_local! {
@@ -98,6 +100,7 @@ impl Window {
         bar.append(&title);
         let search_box = ui::hbox(8, "kr-search");
         search_box.set_size_request(340, -1);
+        search_box.set_hexpand(false);
         search_box.set_valign(Align::Center);
         search_box.append(&ui::icon("spark", "k_accent", 13));
         let search = gtk::Entry::new();
@@ -143,6 +146,7 @@ impl Window {
             peers: RefCell::new(Peers::load()),
             home: RefCell::new(None),
             search,
+            sessions: RefCell::new(Vec::new()),
         });
 
         // pages

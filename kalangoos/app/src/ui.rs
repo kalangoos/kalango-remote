@@ -112,16 +112,14 @@ pub fn set_icon(img: &gtk::Image, name: &str, color: &str, px: i32) {
     img.set_paintable(icon_texture(name, color, px).as_ref());
 }
 
-/// A picture from the app's PNGs (brand art).
-pub fn png(bytes: &'static [u8], px: i32) -> gtk::Picture {
-    let pic = gtk::Picture::new();
+/// A picture from the app's PNGs (brand art), at a fixed size.
+pub fn png(bytes: &'static [u8], px: i32) -> gtk::Image {
+    let img = gtk::Image::new();
     if let Ok(t) = gdk::Texture::from_bytes(&glib::Bytes::from_static(bytes)) {
-        pic.set_paintable(Some(&t));
+        img.set_paintable(Some(&t));
     }
-    pic.set_can_shrink(true);
-    pic.set_content_fit(gtk::ContentFit::Contain);
-    pic.set_size_request(px, px);
-    pic
+    img.set_pixel_size(px);
+    img
 }
 
 pub fn hbox(spacing: i32, class: &str) -> gtk::Box {

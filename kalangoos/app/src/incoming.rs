@@ -219,7 +219,9 @@ impl Incoming {
         deny.connect_clicked(move |_| d(false));
         let d = decide.clone();
         allow.connect_clicked(move |_| d(true));
+        // Esc denies and Enter allows wherever the focus is (capture: before the focused button)
         let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         let d = decide.clone();
         keys.connect_key_pressed(move |_, k, _, _| match k {
             gdk::Key::Escape => {

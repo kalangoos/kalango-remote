@@ -30,6 +30,9 @@ NP=$!
 trap 'kill $NP ${XP:-} 2>/dev/null' EXIT
 for _ in $(seq 40); do grep -q "listening on Wayland socket" "$SAIDA/niri.log" && break; sleep 0.5; done
 S=$(grep -o "listening on Wayland socket: [^ ]*" "$SAIDA/niri.log" | awk '{print $NF}')
+# a saída do niri aninhado segue o tamanho da janela X dele
+W=$(DISPLAY="$DISP" xdotool search --name "^niri$" | head -1)
+[ -n "$W" ] && DISPLAY="$DISP" xdotool windowsize "$W" "${TAM%x*}" "${TAM#*x}" && sleep 1
 echo "export WAYLAND_DISPLAY=$S DISPLAY=$DISP" > "$SAIDA/env"
 echo "niri aninhado em $S (source $SAIDA/env)"
 wait $NP

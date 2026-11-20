@@ -438,12 +438,20 @@ impl Client {
         }
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
+            let mut conn =
+                connect_tcp_local(check_port(peer, RELAY_PORT + 1), None, CONNECT_TIMEOUT).await?;
+            // A peer pinned by a Kalango Remote invite gets the same signed-identity handshake as a
+            // rendezvous connection: encrypted end to end, or refused.
+            let pk = if pinned_peer(peer).is_some() {
+                Self::secure_connection(peer, Vec::new(), key, &mut conn).await?
+            } else {
+                None
+            };
             return Ok((
                 (
-                    connect_tcp_local(check_port(peer, RELAY_PORT + 1), None, CONNECT_TIMEOUT)
-                        .await?,
+                    conn,
                     true,
-                    None,
+                    pk,
                     None,
                     "TCP",
                 ),
@@ -453,11 +461,17 @@ impl Client {
         }
         // Allow connect to {domain}:{port}
         if hbb_common::is_domain_port_str(peer) {
+            let mut conn = connect_tcp_local(peer, None, CONNECT_TIMEOUT).await?;
+            let pk = if pinned_peer(peer).is_some() {
+                Self::secure_connection(peer, Vec::new(), key, &mut conn).await?
+            } else {
+                None
+            };
             return Ok((
                 (
-                    connect_tcp_local(peer, None, CONNECT_TIMEOUT).await?,
+                    conn,
                     true,
-                    None,
+                    pk,
                     None,
                     "TCP",
                 ),
@@ -1674,6 +1688,18 @@ impl Client {
         let is_webrtc = conn.is_webrtc();
         let mut sign_pk = None;
         let mut option_pk = None;
+        // The id the peer must sign: its rendezvous id, or, for a direct address pinned by
+        // Kalango Remote (the invite carries the sharer's id and public key), the pinned id.
+        let mut expected_id = peer_id.to_owned();
+        let mut pinned = false;
+        if signed_id_pk.is_empty() {
+            if let Some((id, pk)) = pinned_peer(peer_id) {
+                pinned = true;
+                expected_id = id;
+                sign_pk = Some(sign::PublicKey(pk));
+                option_pk = Some(pk.to_vec());
+            }
+        }
         if !signed_id_pk.is_empty() {
             if let Some(rs_pk) = rs_pk {
                 if let Ok((id, pk)) = decode_id_pk(&signed_id_pk, &rs_pk) {
@@ -1707,7 +1733,7 @@ impl Client {
                         if let Ok((id, their_pk_b, signed_fp, kx_version)) =
                             decode_id_pk_dtls(&si.id, &sign_pk)
                         {
-                            if id == peer_id {
+                            if id == expected_id {
                                 // WebRTC only: bind the DTLS channel to the verified peer identity.
                                 // webrtc-rs already bound the certificate to the remote SDP, so
                                 // requiring the peer to have SIGNED that fingerprint defeats a
@@ -1751,12 +1777,22 @@ impl Client {
                                 if is_webrtc {
                                     bail!("WebRTC handshake id mismatch (possible MITM)");
                                 }
+                                // A pinned peer (Kalango Remote invite) never falls back to plaintext: whoever answered
+                                // is not the computer that shared the invite.
+                                if pinned {
+                                    bail!("Kalango Remote: the peer's identity does not match the invite (id mismatch)");
+                                }
                                 log::error!("Handshake failed: sign failure");
                                 conn.send(&Message::new()).await?;
                             }
                         } else {
                             if is_webrtc {
                                 bail!("WebRTC peer identity could not be verified (refusing unbound channel)");
+                            }
+                            // A pinned peer (Kalango Remote invite) never falls back to plaintext: whoever answered
+                            // is not the computer that shared the invite.
+                            if pinned {
+                                bail!("Kalango Remote: the peer's identity does not match the invite (signature does not verify)");
                             }
                             // fall back to non-secure connection in case pk mismatch
                             log::info!("pk mismatch, fall back to non-secure");
@@ -1768,12 +1804,22 @@ impl Client {
                         if is_webrtc {
                             bail!("WebRTC handshake received an unexpected message type");
                         }
+                        // A pinned peer (Kalango Remote invite) never falls back to plaintext: whoever answered
+                        // is not the computer that shared the invite.
+                        if pinned {
+                            bail!("Kalango Remote: the peer's identity does not match the invite (no signed identity)");
+                        }
                         log::error!("Handshake failed: invalid message type");
                         conn.send(&Message::new()).await?;
                     }
                 } else {
                     if is_webrtc {
                         bail!("WebRTC handshake received a malformed message");
+                    }
+                    // A pinned peer (Kalango Remote invite) never falls back to plaintext: whoever answered
+                    // is not the computer that shared the invite.
+                    if pinned {
+                        bail!("Kalango Remote: the peer's identity does not match the invite (malformed identity)");
                     }
                     log::error!("Handshake failed: invalid message format");
                     conn.send(&Message::new()).await?;
@@ -5936,4 +5982,14 @@ mod kx_tests {
         assert_eq!(seen.picked, 1);
         assert!(!seen.decrypted && !decrypted);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn pinned_peer(addr: &str) -> Option<(String, [u8; 32])> {
+    crate::kalango::pinned_peer(addr)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn pinned_peer(_addr: &str) -> Option<(String, [u8; 32])> {
+    None
 }

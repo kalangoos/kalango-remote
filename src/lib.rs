@@ -78,3 +78,7 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+
+/// Kalango Remote (KalangoOS): direct sharing, pinned peers and channel-based UI bridges.
+#[cfg(target_os = "linux")]
+pub mod kalango;

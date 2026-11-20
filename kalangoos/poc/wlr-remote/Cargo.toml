@@ -1,0 +1,17 @@
+[package]
+name = "wlr-remote-poc"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "PoC: captura (wlr-screencopy) e entrada (virtual-pointer/keyboard) no niri, sem portal"
+
+[workspace]
+
+[dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+xkbcommon = { version = "0.9", default-features = false }
+rustix = { version = "1", features = ["fs", "mm"] }
+png = "0.17"

@@ -116,6 +116,10 @@ fn serve(args: &[String]) -> i32 {
     let use_tunnel = !args.iter().any(|a| a == "--no-tunnel");
     let ask = args.iter().any(|a| a == "--ask");
     let port: u16 = arg_value(args, "--port").and_then(|p| p.parse().ok()).unwrap_or(if lan { 21118 } else { 0 });
+    if kalango::already_serving() {
+        emit(&out, json!({"event": "error", "kind": "already_sharing", "text": "another core of this instance is serving"}));
+        return 4;
+    }
 
     // one-time password: RustDesk's temporary password, renewed after each session
     Config::set_option("verification-method".into(), "use-temporary-password".into());

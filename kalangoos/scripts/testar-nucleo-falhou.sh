@@ -2,6 +2,8 @@
 # Kalango Remote · o núcleo que não abre (kalangoos/scripts/niri-aninhado.sh rodando): KALANGO_REMOTE_CORE aponta para
 # um programa que escreve um erro de biblioteca e sai com 127. Compartilhar mostra "O núcleo do Kalango Remote não
 # abriu." com a linha do erro, o processo é recolhido (nenhum zumbi) e "Tentar de novo" espera 2 s, depois 4 s.
+# Depois, com um núcleo de verdade já servindo nesta instância, Compartilhar diz que outro Kalango Remote já
+# compartilha este computador. Tudo numa instância própria do teste (KALANGO_REMOTE_INSTANCE, XDG temporários).
 # Capturas em target/app-teste/. Só mata o que ele mesmo abriu.
 set -u
 cd "$(dirname "$0")/../.."
@@ -20,9 +22,10 @@ chmod +x "$T/nucleo"
 X() { DISPLAY="$DISPLAY" xdotool "$@"; }
 cap() { kalangoos/scripts/capturar.sh "$O/$1.png" "${2:-}"; echo "captura: $O/$1.png"; }
 vezes() { [ -f "$T/vezes" ] && wc -l < "$T/vezes" || echo 0; }
+export KALANGO_REMOTE_INSTANCE=nucleo$$ KALANGO_REMOTE_DEMO="$T/perfil"
 KALANGO_REMOTE_CORE="$T/nucleo" setsid kalangoos/scripts/rodar-app.sh --demo > "$T/app.log" 2>&1 &
 AP=$!
-trap 'kill $AP 2>/dev/null; echo "registros em $T"' EXIT
+trap 'kill $AP ${HP:-} 2>/dev/null; echo "registros em $T"' EXIT
 sleep 4
 X windowfocus --sync "$(X search --name '^niri$' | head -1)"
 SOCK=$(grep -ao "IPC listening on: [^ ]*" target/niri-aninhado/niri.log | tail -1 | awk '{print $NF}' | sed 's/\x1b\[[0-9;]*m//g')
@@ -75,4 +78,30 @@ light = sum(1 for dx in range(-80, 80) for dy in range(-6, 6) if sum(im.getpixel
 sys.exit(0 if light == 0 else 1)
 PY
 echo "   ok: o botão esperou e a segunda tentativa também foi recolhida (agora espera mais)"
+
+# outro núcleo desta mesma instância já servindo (como outra janela compartilhando)
+kill $AP; sleep 1
+mkfifo "$T/entrada"
+( source kalangoos/scripts/env.sh; exec env XDG_CONFIG_HOME="$T/perfil/config" KALANGO_CORE_TEXT=1 target/debug/kalango-remote-core serve --no-tunnel < "$T/entrada" > "$T/outro.out" 2> "$T/outro.err" ) &
+HP=$!
+exec 3> "$T/entrada"
+for _ in $(seq 40); do grep -q '"listening"' "$T/outro.out" && break; sleep 0.5; done
+grep -q '"listening"' "$T/outro.out" || falhou "o outro núcleo não começou"
+setsid kalangoos/scripts/rodar-app.sh --demo > "$T/app2.log" 2>&1 &
+AP=$!
+sleep 4
+X mousemove 1500 600; sleep 0.5
+X mousemove "$SX" "$SY" click 1
+sleep 2
+cap 22-ja-compartilhado
+python3 - "$O/22-ja-compartilhado.png" "$SX" <<'PY' || falhou "o cartão não diz que já está compartilhado (o selo dourado)"
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+# the gold badge at the top right of the card (#E5C98C text)
+gold = sum(1 for x in range(0, im.size[0], 1) for y in range(100, 140) if (lambda p: abs(p[0]-229) < 25 and abs(p[1]-201) < 25 and abs(p[2]-140) < 30)(im.getpixel((x, y))))
+sys.exit(0 if gold > 20 else 1)
+PY
+kill -0 $HP 2>/dev/null || falhou "o núcleo que já servia caiu"
+echo "   ok: com outro compartilhando, o cartão diz isso e o outro continua de pé"
 echo OK

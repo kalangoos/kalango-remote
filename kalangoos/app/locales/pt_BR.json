@@ -359,5 +359,8 @@
  "The Kalango Remote core did not open.": "O núcleo do Kalango Remote não abriu.",
  "core stopped": "núcleo parado",
  "Try again in {n} s": "Tentar de novo em {n} s",
- "It exited with code {code}.": "Ele saiu com o código {code}."
+ "It exited with code {code}.": "Ele saiu com o código {code}.",
+ "already sharing": "já compartilhado",
+ "This computer is already shared by another Kalango Remote.": "Outro Kalango Remote já está compartilhando este computador.",
+ "Only one can receive connections at a time. Stop sharing in the other window (or close it) and try again here.": "Só um recebe conexões de cada vez. Pare de compartilhar na outra janela (ou feche-a) e tente de novo aqui."
 }

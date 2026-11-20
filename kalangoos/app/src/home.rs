@@ -25,6 +25,8 @@ enum ShareState {
     Failed(String),
     /// the core exited before answering (the first line of its stderr, or its exit code)
     CoreFailed(String),
+    /// another Kalango Remote already shares this computer (its core holds the IPC sockets)
+    AlreadySharing,
 }
 
 #[derive(Default)]
@@ -53,6 +55,7 @@ struct ShareCard {
     time_fill: gtk::Box,
     failed_text: gtk::Label,
     noinet_text: gtk::Label,
+    core_title: gtk::Label,
     core_text: gtk::Label,
     core_retry: gtk::Button,
     opening_step: gtk::Label,
@@ -325,7 +328,8 @@ impl ShareCard {
 
         // the core did not open
         let nocore = ui::vbox(10, "");
-        nocore.append(&ui::label(tr("The Kalango Remote core did not open."), "kr-big-title"));
+        let core_title = ui::label(tr("The Kalango Remote core did not open."), "kr-big-title");
+        nocore.append(&core_title);
         let core_text = ui::para("", "kr-caption");
         nocore.append(&core_text);
         let crow = ui::hbox(8, "");
@@ -356,6 +360,7 @@ impl ShareCard {
             time_fill,
             failed_text,
             noinet_text,
+            core_title,
             core_text,
             core_retry,
             opening_step,
@@ -749,7 +754,15 @@ impl Home {
             ShareState::CoreFailed(why) => {
                 self.share.stack.set_visible_child_name("nocore");
                 self.share.set_badge(tr("core stopped"), "coral");
+                self.share.core_title.set_text(tr("The Kalango Remote core did not open."));
                 self.share.core_text.set_text(why);
+                self.retry_countdown();
+            }
+            ShareState::AlreadySharing => {
+                self.share.stack.set_visible_child_name("nocore");
+                self.share.set_badge(tr("already sharing"), "gold");
+                self.share.core_title.set_text(tr("This computer is already shared by another Kalango Remote."));
+                self.share.core_text.set_text(tr("Only one can receive connections at a time. Stop sharing in the other window (or close it) and try again here."));
                 self.retry_countdown();
             }
             ShareState::Failed(why) => {
@@ -906,6 +919,15 @@ impl Home {
             "tunnel" => {
                 self.info.borrow_mut().link = s("link");
                 self.begin_shared();
+            }
+            "error" if v["kind"] == "already_sharing" => {
+                if let Some(c) = self.core.borrow_mut().take() {
+                    c.stop();
+                }
+                let n = self.core_failures.get().saturating_add(1);
+                self.core_failures.set(n);
+                self.retry_at.set(store::now() + 2u64.saturating_pow(n.min(5)).min(30));
+                self.set_state(ShareState::AlreadySharing);
             }
             "tunnel_error" => {
                 let text = s("text");

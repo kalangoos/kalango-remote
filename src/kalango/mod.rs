@@ -70,6 +70,13 @@ pub fn use_wlr_if_available() -> bool {
 }
 
 /// Names this build's config and IPC namespace, so it never shares state with an installed RustDesk.
+/// Whether a core of this instance already serves on this computer (its IPC sockets answer): a second
+/// one could not bind them, and the connections it accepted would never reach a window.
+pub fn already_serving() -> bool {
+    use std::os::unix::net::UnixStream;
+    ["", "_cm"].iter().any(|p| UnixStream::connect(hbb_common::config::Config::ipc_path(p)).is_ok())
+}
+
 pub fn set_app_name(name: &str) {
     *hbb_common::config::APP_NAME.write().unwrap() = name.to_owned();
 }

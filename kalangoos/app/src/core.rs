@@ -2,7 +2,7 @@
 //! packets on a thread and hand them to the GTK main loop, write commands to it.
 
 use std::{
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
     sync::{Arc, Mutex},
@@ -15,8 +15,17 @@ use serde_json::Value;
 pub enum Msg {
     Event(Value),
     Frame(Frame),
-    /// the process ended (its exit status, when known)
-    Exited(Option<i32>),
+    /// the process ended
+    Exited(Exit),
+}
+
+/// How the core ended.
+#[derive(Debug, Default)]
+pub struct Exit {
+    /// its exit status, when known
+    pub code: Option<i32>,
+    /// the first line it wrote to stderr (the cause when it could not even start, e.g. a missing library)
+    pub first_error: String,
 }
 
 /// Where the core is: `KALANGO_REMOTE_CORE`, or next to this program.
@@ -43,10 +52,26 @@ impl Core {
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()?;
         let stdin = child.stdin.take();
         let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout"))?;
+        // stderr still reaches ours line by line; the first line is kept for the error state
+        let first_error = Arc::new(Mutex::new(None::<String>));
+        if let Some(err) = child.stderr.take() {
+            let first = first_error.clone();
+            std::thread::spawn(move || {
+                for line in BufReader::new(err).lines().map_while(Result::ok) {
+                    eprintln!("{line}");
+                    let mut f = first.lock().unwrap();
+                    if f.is_none() && !line.trim().is_empty() {
+                        *f = Some(line);
+                    }
+                }
+            });
+        }
+        let child = Arc::new(Mutex::new(Some(child)));
+        let reaped = child.clone();
         let (tx, rx) = async_channel::bounded::<Msg>(64);
         std::thread::spawn(move || {
             loop {
@@ -68,14 +93,25 @@ impl Core {
                     _ => break,
                 }
             }
-            tx.send_blocking(Msg::Exited(None)).ok();
+            // reap it (no zombie), unless stop() already took it to do the same
+            let taken = reaped.lock().unwrap().take();
+            let code = taken.and_then(|mut c| c.wait().ok()).and_then(|st| st.code());
+            // the stderr thread may still be on its last line
+            for _ in 0..10 {
+                if first_error.lock().unwrap().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let first_error = first_error.lock().unwrap().clone().unwrap_or_default();
+            tx.send_blocking(Msg::Exited(Exit { code, first_error })).ok();
         });
         glib::spawn_future_local(async move {
             while let Ok(m) = rx.recv().await {
                 on_msg(m);
             }
         });
-        Ok(Core { stdin: Arc::new(Mutex::new(stdin)), child: Arc::new(Mutex::new(Some(child))) })
+        Ok(Core { stdin: Arc::new(Mutex::new(stdin)), child })
     }
 
     /// The process id (for kalangod's permission), while it runs.

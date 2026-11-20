@@ -355,5 +355,9 @@
  "“connect to mom's laptop and install the printer”": "“conecte no notebook da mãe e instale a impressora”",
  "← Receive": "← Receber",
  "✓ Answered · {t} {fp} · not trusted yet (asked at the first connection)": "✓ Respondeu · {t} {fp} · ainda não confiada (pergunta na primeira conexão)",
- "✓ Answered · {t} · known key": "✓ Respondeu · {t} · chave conhecida"
+ "✓ Answered · {t} · known key": "✓ Respondeu · {t} · chave conhecida",
+ "The Kalango Remote core did not open.": "O núcleo do Kalango Remote não abriu.",
+ "core stopped": "núcleo parado",
+ "Try again in {n} s": "Tentar de novo em {n} s",
+ "It exited with code {code}.": "Ele saiu com o código {code}."
 }

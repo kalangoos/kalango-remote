@@ -10,6 +10,7 @@ mod core;
 mod home;
 mod i18n;
 mod incoming;
+mod kalangod;
 mod secrets;
 mod session;
 mod settings;

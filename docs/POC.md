@@ -113,10 +113,11 @@ por `virtual-pointer`/`virtual-keyboard` no servidor, usados quando o compositor
 para os outros compositores. Para a tela de entrada (antes do login), o caminho é o `uinput` do RustDesk
 rodando como root — no KalangoOS isso passaria pelo `kalangod`, com aprovação explícita.
 
-**Segurança:** qualquer programa fora de sandbox na sessão pode usar esses três protocolos — não é o
-Kalango Remote que abre isso, é o niri. A aprovação do Kalango Remote decide quem do outro lado controla;
-uma proposta para o KalangoOS é um patch no niri que só ofereça esses globais a clientes autorizados pelo
-`kalangod`.
+**Segurança:** no niri original, qualquer programa fora de sandbox na sessão pode usar esses três protocolos.
+O KalangoOS fecha isso com o patch 0008 do niri: com `KALANGO_NIRI_CONTROLE`, os três só aparecem para quem o
+`kalangod` (root) permite — o teclado na tela do shell sempre, e o núcleo do Kalango Remote só durante uma sessão
+que a pessoa aprovou (o app pede `kalango/controle_remoto` logo antes de autorizar e tira quando a sessão acaba).
+Testado em `kalangoos/scripts/testar-permissao.sh`.
 
 ## C. Arquitetura que saiu das provas
 

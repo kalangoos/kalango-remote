@@ -15,6 +15,13 @@ mod input;
 
 pub use capture::{Capture, CapturedFrame};
 pub use globals::{available, outputs, Output};
+
+/// Whether the session's compositor is niri (its wlr protocols may be offered only after a permission, so
+/// [`available`] can say no before it).
+pub fn is_niri() -> bool {
+    std::env::var_os("NIRI_SOCKET").is_some()
+        || std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.to_lowercase().contains("niri"))
+}
 pub use input::{Button, Input};
 
 /// Whether `KALANGO_WLR` turned this backend on (set by Kalango Remote's core after [`available`]).

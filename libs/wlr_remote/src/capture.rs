@@ -125,10 +125,19 @@ impl HasGlobals for State {
 }
 
 fn run(index: usize, shared: &Arc<(Mutex<Shared>, Condvar)>, stop: &AtomicBool) -> std::io::Result<()> {
-    let mut st = State::default();
-    let (conn, mut eq) = globals::connect(&mut st)?;
+    // KalangoOS's niri offers screencopy only after kalangod allowed this process (niri patch 0008), which the
+    // app asks for right when the person approves: wait for it a little
+    let started = std::time::Instant::now();
+    let (mut st, conn, mut eq) = loop {
+        let mut st = State::default();
+        let (conn, eq) = globals::connect(&mut st)?;
+        if st.g.screencopy.is_some() || started.elapsed() > Duration::from_secs(10) || stop.load(Ordering::Relaxed) {
+            break (st, conn, eq);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
     let qh = eq.handle();
-    let mgr = st.g.screencopy.clone().ok_or_else(|| std::io::Error::other("no zwlr_screencopy_manager_v1"))?;
+    let mgr = st.g.screencopy.clone().ok_or_else(|| std::io::Error::other("no zwlr_screencopy_manager_v1 (not allowed by the compositor?)"))?;
     let out = st.g.outputs.get(index).and_then(|o| o.proxy.clone()).ok_or_else(|| std::io::Error::other("output gone"))?;
     let flipped = st.g.public_outputs().get(index).map(|o| o.flipped).unwrap_or(false);
     let shm = st.g.shm.clone().ok_or_else(|| std::io::Error::other("no wl_shm"))?;

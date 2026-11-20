@@ -61,7 +61,7 @@ pub fn identity() -> (String, Vec<u8>) {
 /// RemoteDesktop portal). Must run before anything asks whether this is X11: RustDesk then takes its
 /// X11-shaped paths (`RUSTDESK_FORCED_DISPLAY_SERVER`), and `scrap`/enigo use the wlr backends.
 pub fn use_wlr_if_available() -> bool {
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() || !wlr_remote::available() {
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() || !(wlr_remote::available() || wlr_remote::is_niri()) {
         return false;
     }
     std::env::set_var("KALANGO_WLR", "1");

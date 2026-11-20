@@ -7,8 +7,35 @@ use hbb_common::log;
 
 use crate::server::uinput::service::map_key;
 
-pub struct WlrMouse(std::sync::Arc<wlr_remote::Input>);
-pub struct WlrKeyboard(std::sync::Arc<wlr_remote::Input>);
+/// The virtual devices, started on first use: KalangoOS's niri offers them only after kalangod allowed this
+/// process (niri patch 0008), which happens when the person approves the access, after the server started.
+#[derive(Default)]
+pub struct Lazy {
+    input: std::sync::Mutex<Option<std::sync::Arc<wlr_remote::Input>>>,
+    last_try: std::sync::Mutex<Option<std::time::Instant>>,
+}
+
+impl Lazy {
+    fn get(&self) -> Option<std::sync::Arc<wlr_remote::Input>> {
+        let mut input = self.input.lock().unwrap();
+        if input.is_none() {
+            let mut last = self.last_try.lock().unwrap();
+            // at most one attempt a second: events keep coming while it is not allowed
+            if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1)) {
+                return None;
+            }
+            *last = Some(std::time::Instant::now());
+            match wlr_remote::Input::start() {
+                Ok(i) => *input = Some(std::sync::Arc::new(i)),
+                Err(e) => log::warn!("wlr input not available yet: {e}"),
+            }
+        }
+        input.clone()
+    }
+}
+
+pub struct WlrMouse(std::sync::Arc<Lazy>);
+pub struct WlrKeyboard(std::sync::Arc<Lazy>);
 
 fn button(b: MouseButton) -> Option<wlr_remote::Button> {
     Some(match b {
@@ -29,28 +56,28 @@ impl MouseControllable for WlrMouse {
         self
     }
     fn mouse_move_to(&mut self, x: i32, y: i32) {
-        self.0.move_to(x, y);
+        if let Some(i) = self.0.get() { i.move_to(x, y) }
     }
     fn mouse_move_relative(&mut self, x: i32, y: i32) {
-        self.0.move_by(x, y);
+        if let Some(i) = self.0.get() { i.move_by(x, y) }
     }
     fn mouse_down(&mut self, b: MouseButton) -> enigo::ResultType {
         match b {
-            MouseButton::ScrollUp => self.0.scroll(0, -1),
-            MouseButton::ScrollDown => self.0.scroll(0, 1),
-            MouseButton::ScrollLeft => self.0.scroll(-1, 0),
-            MouseButton::ScrollRight => self.0.scroll(1, 0),
+            MouseButton::ScrollUp => { if let Some(i) = self.0.get() { i.scroll(0, -1) } }
+            MouseButton::ScrollDown => { if let Some(i) = self.0.get() { i.scroll(0, 1) } }
+            MouseButton::ScrollLeft => { if let Some(i) = self.0.get() { i.scroll(-1, 0) } }
+            MouseButton::ScrollRight => { if let Some(i) = self.0.get() { i.scroll(1, 0) } }
             b => {
-                if let Some(b) = button(b) {
-                    self.0.button(b, true);
+                if let (Some(b), Some(i)) = (button(b), self.0.get()) {
+                    i.button(b, true);
                 }
             }
         }
         Ok(())
     }
     fn mouse_up(&mut self, b: MouseButton) {
-        if let Some(b) = button(b) {
-            self.0.button(b, false);
+        if let (Some(b), Some(i)) = (button(b), self.0.get()) {
+            i.button(b, false);
         }
     }
     fn mouse_click(&mut self, b: MouseButton) {
@@ -58,10 +85,10 @@ impl MouseControllable for WlrMouse {
         self.mouse_up(b);
     }
     fn mouse_scroll_x(&mut self, length: i32) {
-        self.0.scroll(length, 0);
+        if let Some(i) = self.0.get() { i.scroll(length, 0) }
     }
     fn mouse_scroll_y(&mut self, length: i32) {
-        self.0.scroll(0, length);
+        if let Some(i) = self.0.get() { i.scroll(0, length) }
     }
 }
 
@@ -78,12 +105,13 @@ const KEY_LEFTSHIFT: u32 = 42;
 
 impl WlrKeyboard {
     fn press(&self, code: u32, shift: bool, down: bool) {
+        let Some(i) = self.0.get() else { return };
         if shift && down {
-            self.0.key(KEY_LEFTSHIFT, true);
+            i.key(KEY_LEFTSHIFT, true);
         }
-        self.0.key(code, down);
+        i.key(code, down);
         if shift && !down {
-            self.0.key(KEY_LEFTSHIFT, false);
+            i.key(KEY_LEFTSHIFT, false);
         }
     }
 }
@@ -128,8 +156,8 @@ impl KeyboardControllable for WlrKeyboard {
 
 /// Points RustDesk's input at the virtual devices.
 pub fn setup() -> hbb_common::ResultType<()> {
-    let input = std::sync::Arc::new(wlr_remote::Input::start()?);
+    let input = std::sync::Arc::new(Lazy::default());
     crate::server::input_service::set_custom_input(Box::new(WlrKeyboard(input.clone())), Box::new(WlrMouse(input)));
-    log::info!("kalango: input through wlr virtual pointer and keyboard");
+    log::info!("kalango: input through wlr virtual pointer and keyboard (started on first use)");
     Ok(())
 }

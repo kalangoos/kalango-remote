@@ -1,6 +1,6 @@
 use crate::{
     common::{
-        wayland,
+        wayland, wlr,
         x11::{self},
         TraitCapturer,
     },
@@ -11,6 +11,7 @@ use std::{io, time::Duration};
 pub enum Capturer {
     X11(x11::Capturer),
     WAYLAND(wayland::Capturer),
+    WLR(wlr::Capturer),
 }
 
 impl Capturer {
@@ -18,6 +19,7 @@ impl Capturer {
         Ok(match display {
             Display::X11(d) => Capturer::X11(x11::Capturer::new(d)?),
             Display::WAYLAND(d) => Capturer::WAYLAND(wayland::Capturer::new(d)?),
+            Display::WLR(d) => Capturer::WLR(wlr::Capturer::new(d)?),
         })
     }
 
@@ -25,6 +27,7 @@ impl Capturer {
         match self {
             Capturer::X11(d) => d.width(),
             Capturer::WAYLAND(d) => d.width(),
+            Capturer::WLR(d) => d.width(),
         }
     }
 
@@ -32,6 +35,7 @@ impl Capturer {
         match self {
             Capturer::X11(d) => d.height(),
             Capturer::WAYLAND(d) => d.height(),
+            Capturer::WLR(d) => d.height(),
         }
     }
 }
@@ -41,6 +45,7 @@ impl TraitCapturer for Capturer {
         match self {
             Capturer::X11(d) => d.frame(timeout),
             Capturer::WAYLAND(d) => d.frame(timeout),
+            Capturer::WLR(d) => d.frame(timeout),
         }
     }
 }
@@ -48,10 +53,14 @@ impl TraitCapturer for Capturer {
 pub enum Display {
     X11(x11::Display),
     WAYLAND(wayland::Display),
+    WLR(wlr::Display),
 }
 
 impl Display {
     pub fn primary() -> io::Result<Display> {
+        if wlr_remote::active() {
+            return Ok(Display::WLR(wlr::Display::primary()?));
+        }
         Ok(if super::is_x11() {
             Display::X11(x11::Display::primary()?)
         } else {
@@ -61,6 +70,9 @@ impl Display {
 
     // Currently, wayland need to call wayland::clear() before call Display::all()
     pub fn all() -> io::Result<Vec<Display>> {
+        if wlr_remote::active() {
+            return Ok(wlr::Display::all()?.drain(..).map(Display::WLR).collect());
+        }
         Ok(if super::is_x11() {
             x11::Display::all()?
                 .drain(..)
@@ -78,6 +90,7 @@ impl Display {
         match self {
             Display::X11(d) => d.width(),
             Display::WAYLAND(d) => d.width(),
+            Display::WLR(d) => d.width(),
         }
     }
 
@@ -85,6 +98,7 @@ impl Display {
         match self {
             Display::X11(d) => d.height(),
             Display::WAYLAND(d) => d.height(),
+            Display::WLR(d) => d.height(),
         }
     }
 
@@ -92,6 +106,7 @@ impl Display {
         match self {
             Display::X11(_d) => 1.0,
             Display::WAYLAND(d) => d.scale(),
+            Display::WLR(d) => d.scale(),
         }
     }
 
@@ -99,6 +114,7 @@ impl Display {
         match self {
             Display::X11(d) => d.width(),
             Display::WAYLAND(d) => d.logical_width(),
+            Display::WLR(d) => d.logical_width(),
         }
     }
 
@@ -106,6 +122,7 @@ impl Display {
         match self {
             Display::X11(d) => d.height(),
             Display::WAYLAND(d) => d.logical_height(),
+            Display::WLR(d) => d.logical_height(),
         }
     }
 
@@ -113,6 +130,7 @@ impl Display {
         match self {
             Display::X11(d) => d.origin(),
             Display::WAYLAND(d) => d.origin(),
+            Display::WLR(d) => d.origin(),
         }
     }
 
@@ -120,6 +138,7 @@ impl Display {
         match self {
             Display::X11(d) => d.is_online(),
             Display::WAYLAND(d) => d.is_online(),
+            Display::WLR(d) => d.is_online(),
         }
     }
 
@@ -127,6 +146,7 @@ impl Display {
         match self {
             Display::X11(d) => d.is_primary(),
             Display::WAYLAND(d) => d.is_primary(),
+            Display::WLR(d) => d.is_primary(),
         }
     }
 
@@ -134,6 +154,7 @@ impl Display {
         match self {
             Display::X11(d) => d.name(),
             Display::WAYLAND(d) => d.name(),
+            Display::WLR(d) => d.name(),
         }
     }
 }

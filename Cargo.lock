@@ -7197,6 +7197,7 @@ dependencies = [
  "winit",
  "winreg 0.11.0",
  "winres",
+ "wlr_remote",
  "wol-rs",
  "x11-clipboard 0.8.1",
  "x11rb 0.12.0",
@@ -7451,6 +7452,7 @@ dependencies = [
  "tracing",
  "webm",
  "winapi 0.3.9",
+ "wlr_remote",
  "zbus",
 ]
 
@@ -10594,6 +10596,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wlr_remote"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rustix 1.1.2",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-misc",
+ "wayland-protocols-wlr",
+ "xkbcommon",
+]
+
+[[package]]
 name = "wol-rs"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10754,6 +10769,16 @@ checksum = "ca91dcf8f93db085f3a0a29358cd0b9d670915468f4290e8b85d118a34211ab8"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "xkbcommon"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7a974f48060a14e95705c01f24ad9c3345022f4d97441b8a36beb7ed5c4a02d"
+dependencies = [
+ "libc",
+ "xkeysym",
 ]
 
 [[package]]

@@ -32,6 +32,8 @@ pub struct Window {
     pub search: gtk::Entry,
     /// sessions with a window open (the home page lets go of them once connected)
     pub sessions: RefCell<Vec<Rc<crate::session::Session>>>,
+    /// the SSH page (its handlers hold weak references: the window keeps it alive)
+    pub ssh: RefCell<Option<Rc<crate::ssh::page::SshPage>>>,
 }
 
 thread_local! {
@@ -147,6 +149,7 @@ impl Window {
             home: RefCell::new(None),
             search,
             sessions: RefCell::new(Vec::new()),
+            ssh: RefCell::new(None),
         });
 
         // pages
@@ -156,7 +159,9 @@ impl Window {
         this.stack.add_named(&crate::session::transfers_page(), Some("transfers"));
         this.stack.add_named(&crate::session::history_page(&this), Some("history"));
         this.stack.add_named(&SettingsPage::new(&this).root, Some("settings"));
-        this.stack.add_named(&placeholder_ssh(), Some("ssh"));
+        let ssh = crate::ssh::page::SshPage::new(&this);
+        this.stack.add_named(&ssh.root, Some("ssh"));
+        *this.ssh.borrow_mut() = Some(ssh);
 
         for (id, b, _, _) in this.rail.borrow().iter() {
             let w = Rc::downgrade(&this);
@@ -259,11 +264,6 @@ impl Window {
     }
 }
 
-fn placeholder_ssh() -> gtk::Widget {
-    // replaced by the SSH area (phase 3)
-    let b = ui::vbox(0, "kr-page");
-    b.upcast()
-}
 
 fn dump_min(w: &gtk::Widget, depth: usize) {
     if depth > 16 || !w.is_visible() {

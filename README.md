@@ -39,6 +39,9 @@ Em desenvolvimento, já usável entre dois computadores Linux. O que funciona e 
   sempre **cifrado de ponta a ponta**: o convite leva a identidade de quem compartilha e outra chave é recusada.
 - **Sessão** com a tela remota, barra que se esconde, qualidade, escala, chat, transferência de arquivos e
   reconexão. No KalangoOS (niri), a captura é por `wlr-screencopy` e o controle por teclado e ponteiro virtuais.
+- **SSH**: servidores em grupos com herança, importar `~/.ssh`, chaves no chaveiro do sistema, impressão digital
+  conferida antes de conectar (chave trocada é bloqueada), encaminhamentos de porta. As sessões abrem no Terminal do
+  KalangoOS (contrato em [`docs/HOSTS.md`](docs/HOSTS.md); teste com `kalangoos/scripts/testar-ssh.sh`).
 
 Ainda não: compartilhar por servidor próprio, verificação em duas etapas, gravar sessões e o modo privacidade.
 Não testado: o niri numa sessão de verdade (só aninhado) e dois computadores físicos.

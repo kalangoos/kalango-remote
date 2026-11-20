@@ -4594,13 +4594,17 @@ name = "kalango-remote"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "base64 0.22.1",
  "gtk4",
  "gtk4-layer-shell",
+ "hmac",
  "kalango-remote-proto",
  "libc",
  "qrcode",
  "serde 1.0.228",
  "serde_json 1.0.118",
+ "sha1",
+ "sha2",
 ]
 
 [[package]]

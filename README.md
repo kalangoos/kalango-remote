@@ -48,5 +48,5 @@ Issues e pull requests são bem-vindos no ramo `kalangoos`. As regras da casa do
 ## Licença e créditos
 
 AGPL-3.0 (veja [LICENCE](LICENCE)). O Kalango Remote é baseado no
-[RustDesk](https://github.com/rustdesk/rustdesk), de Purslane Ltd. e colaboradores, também sob a AGPL-3.0: quem
+[RustDesk](https://github.com/rustdesk/rustdesk), da Purslane Tech Pte. Ltd. e colaboradores, também sob a AGPL-3.0: quem
 distribui ou oferece o Kalango Remote como serviço precisa disponibilizar o código-fonte das suas mudanças.

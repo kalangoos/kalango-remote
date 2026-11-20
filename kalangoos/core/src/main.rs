@@ -33,7 +33,24 @@ use kalango_remote_proto::{
 use librustdesk::kalango::{self, cm, session};
 use serde_json::{json, Value};
 
-type Out = Arc<Mutex<std::io::Stdout>>;
+type Out = Arc<Mutex<std::fs::File>>;
+
+/// The protocol's own channel: a copy of fd 1 taken at start, with fd 1 itself pointed at stderr. Libraries in the
+/// RustDesk core print to stdout (enigo's `let _ = writeln!(out.lock().unwrap(), "kbd context error")` on a system without an X keyboard): mixed
+/// into the binary packets, one stray line desynced the stream, the app stopped reading it, and the share card stayed
+/// on "asking for a temporary address" forever (seen on the installed KalangoOS in VirtualBox).
+fn protocol_out() -> std::fs::File {
+    use std::os::fd::FromRawFd;
+    static FD: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    let fd = *FD.get_or_init(|| unsafe {
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let copy = libc::dup(1);
+        libc::dup2(2, 1);
+        copy
+    });
+    let f = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(fd) });
+    f.try_clone().expect("the protocol channel")
+}
 
 /// `KALANGO_CORE_TEXT=1`: events as JSON lines (tests and people reading along) instead of packets.
 fn text_mode() -> bool {
@@ -67,6 +84,8 @@ fn main() {
         Ok(i) if !i.is_empty() && i.chars().all(|c| c.is_ascii_alphanumeric()) => kalango::set_app_name(&format!("kalango-remote-{i}")),
         _ => kalango::set_app_name("kalango-remote"),
     }
+    // (before anything else writes: from here on fd 1 is stderr and the protocol has its own copy)
+    drop(protocol_out());
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("serve") => {
@@ -112,7 +131,7 @@ fn commands() -> impl Iterator<Item = Value> {
 // sharing
 
 fn serve(args: &[String]) -> i32 {
-    let out: Out = Arc::new(Mutex::new(std::io::stdout()));
+    let out: Out = Arc::new(Mutex::new(protocol_out()));
     let lan = args.iter().any(|a| a == "--lan");
     let use_tunnel = !args.iter().any(|a| a == "--no-tunnel");
     let ask = args.iter().any(|a| a == "--ask");
@@ -297,7 +316,7 @@ fn resolve(target: &str, out: &Out) -> Result<(String, bool), String> {
 }
 
 fn client(args: &[String], probe: bool) -> i32 {
-    let out: Out = Arc::new(Mutex::new(std::io::stdout()));
+    let out: Out = Arc::new(Mutex::new(protocol_out()));
     let Some(target) = args.first().filter(|a| !a.starts_with("--")) else {
         eprintln!("missing target");
         return 2;
@@ -379,7 +398,7 @@ fn client(args: &[String], probe: bool) -> i32 {
 
 /// `--click X,Y` and `--type TEXT` (lowercase ASCII): input sent once the first frame arrived, so a
 /// test can check that control reaches the shared computer.
-fn send_probe_input(s: &session::KalangoSession, args: &[String]) {
+fn send_probe_input(s: &session::KalangoSession, args: &[String], out: &Out) {
     if let Some((x, y)) = arg_value(args, "--click").and_then(|v| v.split_once(',').map(|(a, b)| (a.parse().ok(), b.parse().ok()))) {
         if let (Some(x), Some(y)) = (x, y) {
             // RustDesk's mouse masks: type in the low 3 bits (1 down, 2 up), button << 3 (1 = left)
@@ -387,7 +406,7 @@ fn send_probe_input(s: &session::KalangoSession, args: &[String]) {
             std::thread::sleep(Duration::from_millis(100));
             s.send_mouse(1 | (1 << 3), x, y, false, false, false, false);
             s.send_mouse(2 | (1 << 3), x, y, false, false, false, false);
-            println!("{}", json!({"probe": "clicked", "x": x, "y": y}));
+            let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "clicked", "x": x, "y": y}));
             std::thread::sleep(Duration::from_millis(300));
         }
     }
@@ -398,7 +417,7 @@ fn send_probe_input(s: &session::KalangoSession, args: &[String]) {
             s.input_key(&name, false, false, false, false, false, false);
             std::thread::sleep(Duration::from_millis(20));
         }
-        println!("{}", json!({"probe": "typed", "chars": text.chars().count()}));
+        let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "typed", "chars": text.chars().count()}));
     }
 }
 
@@ -412,7 +431,7 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
     while start.elapsed() < timeout && n < want {
         while let Ok(ev) = rx.try_recv() {
             let v = serde_json::to_value(&ev).unwrap_or_default();
-            println!("{v}");
+            let _ = writeln!(out.lock().unwrap(), "{v}");
             if matches!(ev, session::Event::Message { ref msgtype, .. } if msgtype.contains("error")) {
                 return 1;
             }
@@ -421,8 +440,8 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
             n += 1;
             let t = *first.get_or_insert_with(Instant::now);
             if n == 1 {
-                send_probe_input(&s, args);
-                println!("{}", json!({"probe": "first_frame", "width": f.width, "height": f.height, "after_ms": start.elapsed().as_millis()}));
+                send_probe_input(&s, args, out);
+                let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "first_frame", "width": f.width, "height": f.height, "after_ms": start.elapsed().as_millis()}));
                 if let Some(path) = &save {
                     // BGRA rows with padding → tightly packed RGBA
                     let mut rgba = Vec::with_capacity(f.width * f.height * 4);
@@ -438,18 +457,17 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
             }
             if n == want {
                 let secs = t.elapsed().as_secs_f64().max(0.001);
-                println!("{}", json!({"probe": "done", "frames": n, "fps_after_first": ((n - 1) as f64 / secs * 10.0).round() / 10.0, "dropped": s.ui_handler.frames.dropped.load(std::sync::atomic::Ordering::Relaxed)}));
+                let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "done", "frames": n, "fps_after_first": ((n - 1) as f64 / secs * 10.0).round() / 10.0, "dropped": s.ui_handler.frames.dropped.load(std::sync::atomic::Ordering::Relaxed)}));
             }
         }
     }
-    let _ = std::io::stdout().flush();
-    let _ = out;
+    let _ = out.lock().unwrap().flush();
     s.close();
     std::thread::sleep(Duration::from_millis(300));
     if n >= want {
         0
     } else {
-        println!("{}", json!({"probe": "timeout", "frames": n}));
+        let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "timeout", "frames": n}));
         1
     }
 }

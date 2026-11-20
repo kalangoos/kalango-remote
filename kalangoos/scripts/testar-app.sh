@@ -59,4 +59,17 @@ cap 06-sessao-barra
 grep -q panicked "$LOG" && { echo "FALHOU: pânico no app"; grep -A3 panicked "$LOG"; exit 1; }
 # a sessão abriu de verdade: a janela dela existe no niri
 [ "$(janelas)" -ge 2 ] || { echo "FALHOU: a janela da sessão não abriu"; exit 1; }
+if [ -n "${KALANGO_ESC_DUPLO:-}" ]; then
+  # Esc Esc com o foco longe do aviso da sessão (na janela principal) encerra a sessão: o niri roda KALANGO_ESC_DUPLO
+  aviso() { NIRI_SOCKET=$SOCK "$N" msg -j layers | python3 -c "import json,sys; print(sum(1 for l in json.load(sys.stdin) if l['namespace']=='kalango-remote-banner'))"; }
+  [ "$(aviso)" -ge 1 ] || { echo "FALHOU: o aviso da sessão não está aberto"; NIRI_SOCKET=$SOCK "$N" msg -j layers > $O/layers.json 2>&1; NIRI_SOCKET=$SOCK "$N" msg -j windows > $O/windows.json 2>&1; exit 1; }
+  P=$(NIRI_SOCKET=$SOCK "$N" msg -j windows | python3 -c "import json,sys; print([w['id'] for w in json.load(sys.stdin) if w['title']=='Kalango Remote'][0])")
+  NIRI_SOCKET=$SOCK "$N" msg action focus-window --id "$P"
+  sleep 0.5
+  X key Escape; sleep 0.15; X key Escape
+  for _ in $(seq 20); do [ "$(aviso)" -eq 0 ] && break; sleep 0.5; done
+  cap 07-esc-esc
+  [ "$(aviso)" -eq 0 ] || { echo "FALHOU: Esc Esc não encerrou a sessão"; exit 1; }
+  echo "Esc Esc encerrou a sessão"
+fi
 echo OK

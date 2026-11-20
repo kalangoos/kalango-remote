@@ -3,6 +3,8 @@
 //!
 //!   kalango-remote                      the window
 //!   kalango-remote --page ssh|settings  opening on a page (also for tests and captures)
+//!   kalango-remote end-sessions         ends the sessions going on in the running app (KalangoOS's niri runs it
+//!                                       on Esc Esc while someone is connected)
 //!   kalango-remote ssh-command HOST-ID  the command that opens a saved SSH server, as a JSON array
 //!                                       (for KalangoOS's Terminal; docs/HOSTS.md)
 
@@ -81,6 +83,12 @@ fn main() -> glib::ExitCode {
     app.connect_startup(|_| ui::load_css());
     app.connect_command_line(|app, cmd| {
         let args: Vec<String> = cmd.arguments().iter().skip(1).filter_map(|a| a.to_str().map(str::to_owned)).collect();
+        if args.first().map(String::as_str) == Some("end-sessions") {
+            if let Some(h) = window::Window::get().and_then(|w| w.home.borrow().clone()) {
+                h.end_sessions();
+            }
+            return 0;
+        }
         let page = args.iter().position(|a| a == "--page").and_then(|i| args.get(i + 1)).cloned();
         let w = window::Window::get_or_create(app);
         if let Some(p) = page {

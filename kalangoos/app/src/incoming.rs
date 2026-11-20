@@ -135,6 +135,14 @@ impl Incoming {
         }
     }
 
+    /// Ends every session going on (Esc Esc anywhere: the compositor runs `kalango-remote end-sessions`).
+    pub fn end_sessions(&self) {
+        let ids: Vec<i32> = self.active.borrow().keys().copied().collect();
+        for id in ids {
+            self.send(json!({"cmd": "close", "id": id}));
+        }
+    }
+
     pub fn close_all(&self) {
         self.revoke();
         for (_, r) in self.requests.borrow_mut().drain() {
@@ -241,6 +249,10 @@ impl Incoming {
             let Some(r) = me.requests.borrow_mut().remove(&id) else { return };
             if allow {
                 me.authorize(id, kb.is_active(), clip.is_active(), audio.is_active(), file.is_active());
+                // the core does not announce the connection again after "authorize": the indicator starts here
+                if !me.active.borrow().contains_key(&id) {
+                    me.start_indicator(id, &json!({"name": name, "keyboard": kb.is_active()}));
+                }
                 let until = match dur.selected() {
                     1 => Some(store::now() + 3600),
                     2 => Some(0),

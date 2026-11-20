@@ -3,7 +3,8 @@
 #   1. um programa qualquer da sessão (o grim) não consegue capturar a tela;
 #   2. o núcleo do Kalango Remote rodando sozinho (sem o app, sem aprovação) também não;
 #   3. pelo app, depois da aprovação, a sessão mostra a tela (o kalangod deu a permissão ao núcleo) e a linha do
-#      tempo do kalangod registra o "permitir" e o "revogar".
+#      tempo do kalangod registra o "permitir" e o "revogar";
+#   4. Esc Esc com o foco em outra janela encerra a sessão (patch 0009 do niri).
 # Precisa do niri com o patch 0008 e de um kalangod com o controle remoto (KALANGO_NIRI, KALANGOD; padrão: a
 # árvore SDRustOS-worktrees/niri-remoto ao lado). Só mata o que ele mesmo abriu.
 set -u
@@ -37,6 +38,13 @@ CFG
 KP=$!
 for _ in $(seq 20); do [ -S "$T/mcp.sock" ] && break; sleep 0.3; done
 [ -f "$T/controle-remoto" ] || falhou "o kalangod não escreveu $T/controle-remoto"
+# Esc Esc (no teclado deste computador, com uma sessão acontecendo) encerra a sessão do app de teste
+cat > "$T/esc-duplo" <<SH
+#!/bin/sh
+exec env DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" KALANGO_REMOTE_APP_ID=os.kalango.RemoteDemo "$R/kalangoos/scripts/rodar-app.sh" end-sessions >> "$T/esc-duplo.log" 2>&1
+SH
+chmod +x "$T/esc-duplo"
+export KALANGO_ESC_DUPLO="$T/esc-duplo"
 export KALANGO_NIRI_CONTROLE="$T/controle-remoto" KALANGO_NIRI_CONTROLE_DONO="$(id -u)" RUST_LOG="niri=info,niri::remote_control=debug"
 rm -f target/niri-aninhado/env
 setsid kalangoos/scripts/niri-aninhado.sh :89 1920x1080 > /dev/null 2>&1 &
@@ -87,4 +95,5 @@ assert any(l["tool"] == "controle_remoto.permitir" and l["status"] == "ok" for l
 PY
 grep -a "remote control: pid" target/niri-aninhado/niri.log | sed 's/\x1b\[[0-9;]*m//g' | awk '{$1=""; print "   niri:" $0}' | sort -u | tail -6
 grep -aq "kalango-remote-core) Screencopy → true" target/niri-aninhado/niri.log || falhou "o niri não deu a captura ao núcleo"
+grep -q "^Esc Esc encerrou" "$T/app.out" || falhou "Esc Esc"
 echo OK

@@ -768,6 +768,12 @@ impl Home {
         self.stop_sharing();
     }
 
+    pub fn end_sessions(&self) {
+        if let Some(i) = self.incoming.borrow().as_ref() {
+            i.end_sessions();
+        }
+    }
+
     pub fn stop_sharing(&self) {
         if let Some(c) = self.core.borrow_mut().take() {
             c.stop();

@@ -352,6 +352,16 @@ fn client(args: &[String], probe: bool) -> i32 {
             "quality" => s.save_image_quality(st("value")),
             "toggle" => s.toggle_option(st("name")),
             "refresh" => s.refresh_video(-1),
+            "ctrl_alt_del" => s.ctrl_alt_del(),
+            "lock_screen" => s.lock_screen(),
+            "fps" => s.set_custom_fps(i("value")),
+            "record" => s.record_screen(b("on")),
+            "read_dir" => session::read_remote_dir(&s, &st("path")),
+            "transfer" => {
+                let id = session::transfer(&s, &st("path"), &st("to"), b("from_remote"));
+                emit(&out, json!({"event": "job_started", "id": id, "path": st("path"), "to": st("to"), "from_remote": b("from_remote")}));
+            }
+            "cancel_transfer" => session::cancel_transfer(&s, i("id")),
             "close" => break,
             other => log::warn!("session: unknown command {other}"),
         }

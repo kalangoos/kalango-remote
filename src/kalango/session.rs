@@ -278,3 +278,24 @@ impl InvokeUiSession for Handler {
     fn handle_screenshot_resp(&self, _sid: String, _msg: String) {}
     fn handle_terminal_response(&self, _response: TerminalResponse) {}
 }
+
+/// File transfer: list a folder of the other computer (answered by `Event::FolderFiles`).
+pub fn read_remote_dir(s: &KalangoSession, path: &str) {
+    use crate::client::file_trait::FileManager;
+    s.read_remote_dir(path.to_owned(), false);
+}
+
+/// File transfer: copy `path` to `to`; `from_remote` means `path` is on the other computer
+/// (receive), otherwise it is here (send). Returns the job id that progress events carry.
+pub fn transfer(s: &KalangoSession, path: &str, to: &str, from_remote: bool) -> i32 {
+    use crate::client::file_trait::FileManager;
+    let id = s.get_next_job_id();
+    s.update_next_job_id(id + 1);
+    s.send_files(id, 0, path.to_owned(), to.to_owned(), 0, false, from_remote);
+    id
+}
+
+pub fn cancel_transfer(s: &KalangoSession, id: i32) {
+    use crate::client::file_trait::FileManager;
+    s.cancel_job(id);
+}

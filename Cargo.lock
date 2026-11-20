@@ -2305,7 +2305,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.4",
 ]
 
 [[package]]
@@ -3672,6 +3672,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
 
 [[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
 name = "hbb_common"
 version = "0.1.0"
 dependencies = [
@@ -4058,12 +4064,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.6"
+version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -4254,6 +4260,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalango-remote-core"
+version = "0.1.0"
+dependencies = [
+ "hbb_common",
+ "kalango-remote-proto",
+ "libc",
+ "repng",
+ "rustdesk",
+ "serde_json 1.0.118",
+ "tokio-rustls",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "kalango-remote-proto"
+version = "0.1.0"
+dependencies = [
+ "serde 1.0.228",
+ "serde_json 1.0.118",
+ "sha2",
+]
+
+[[package]]
 name = "kcp-sys"
 version = "0.1.0"
 source = "git+https://github.com/rustdesk-org/kcp-sys?branch=rustdesk-patches#938eda3e5e9757a612385503af7a6cb1189b2cdd"
@@ -4404,7 +4433,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e310b3a6b5907f99202fcdb4960ff45b93735d7c7d96b760fcff8db2dc0e103d"
 dependencies = [
  "cfg-if 1.0.0",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]

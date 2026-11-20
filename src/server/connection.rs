@@ -3119,6 +3119,13 @@ impl Connection {
                     self.try_start_cm(lr.my_id, lr.my_name, false);
                 } else {
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
+                    // Kalango Remote ("ask before each access"): the right password only lets the
+                    // request reach the person at this computer, who still approves it (or not) in
+                    // the request window; the approval arrives as ipc::Data::Authorize.
+                    if approve_after_password() {
+                        self.try_start_cm(lr.my_id, lr.my_name, false);
+                        return true;
+                    }
                     if !self.begin_trusted_device().await {
                         return false;
                     }
@@ -8020,4 +8027,14 @@ mod test {
         assert!(!replaced_by(&conn(3, remote, key(8, "peer")), 2, &mine));
         assert!(!replaced_by(&conn(3, remote, key(7, "other")), 2, &mine));
     }
+}
+
+#[cfg(target_os = "linux")]
+fn approve_after_password() -> bool {
+    crate::kalango::approve_after_password()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn approve_after_password() -> bool {
+    false
 }

@@ -68,7 +68,13 @@ fn main() {
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
-        Some("serve") => serve(&args[1..]),
+        Some("serve") => {
+            // on niri: capture and input through wlr protocols (before anything checks for X11)
+            if kalango::use_wlr_if_available() {
+                log::info!("serve: wlr capture and input");
+            }
+            serve(&args[1..])
+        }
         Some("session") => client(&args[1..], false),
         Some("probe") => client(&args[1..], true),
         _ => {
@@ -346,6 +352,16 @@ fn client(args: &[String], probe: bool) -> i32 {
             "quality" => s.save_image_quality(st("value")),
             "toggle" => s.toggle_option(st("name")),
             "refresh" => s.refresh_video(-1),
+            "ctrl_alt_del" => s.ctrl_alt_del(),
+            "lock_screen" => s.lock_screen(),
+            "fps" => s.set_custom_fps(i("value")),
+            "record" => s.record_screen(b("on")),
+            "read_dir" => session::read_remote_dir(&s, &st("path")),
+            "transfer" => {
+                let id = session::transfer(&s, &st("path"), &st("to"), b("from_remote"));
+                emit(&out, json!({"event": "job_started", "id": id, "path": st("path"), "to": st("to"), "from_remote": b("from_remote")}));
+            }
+            "cancel_transfer" => session::cancel_transfer(&s, i("id")),
             "close" => break,
             other => log::warn!("session: unknown command {other}"),
         }
@@ -353,6 +369,31 @@ fn client(args: &[String], probe: bool) -> i32 {
     s.close();
     std::thread::sleep(Duration::from_millis(300));
     0
+}
+
+/// `--click X,Y` and `--type TEXT` (lowercase ASCII): input sent once the first frame arrived, so a
+/// test can check that control reaches the shared computer.
+fn send_probe_input(s: &session::KalangoSession, args: &[String]) {
+    if let Some((x, y)) = arg_value(args, "--click").and_then(|v| v.split_once(',').map(|(a, b)| (a.parse().ok(), b.parse().ok()))) {
+        if let (Some(x), Some(y)) = (x, y) {
+            // RustDesk's mouse masks: type in the low 3 bits (1 down, 2 up), button << 3 (1 = left)
+            s.send_mouse(0, x, y, false, false, false, false);
+            std::thread::sleep(Duration::from_millis(100));
+            s.send_mouse(1 | (1 << 3), x, y, false, false, false, false);
+            s.send_mouse(2 | (1 << 3), x, y, false, false, false, false);
+            println!("{}", json!({"probe": "clicked", "x": x, "y": y}));
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+    if let Some(text) = arg_value(args, "--type") {
+        for c in text.chars() {
+            let name = c.to_string();
+            s.input_key(&name, true, false, false, false, false, false);
+            s.input_key(&name, false, false, false, false, false, false);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        println!("{}", json!({"probe": "typed", "chars": text.chars().count()}));
+    }
 }
 
 fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, args: &[String], out: &Out) -> i32 {
@@ -374,6 +415,7 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
             n += 1;
             let t = *first.get_or_insert_with(Instant::now);
             if n == 1 {
+                send_probe_input(&s, args);
                 println!("{}", json!({"probe": "first_frame", "width": f.width, "height": f.height, "after_ms": start.elapsed().as_millis()}));
                 if let Some(path) = &save {
                     // BGRA rows with padding → tightly packed RGBA

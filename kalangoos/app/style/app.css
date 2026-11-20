@@ -1,0 +1,218 @@
+/* Kalango Remote · folha de estilo. Só cores dos tokens (@k_*), sem sombras, cantos 8 (janelas e
+   painéis), 6 (cartões), 4 (controles); círculos só em chaves, pontos e avatares. */
+
+window.kr-window { background: @k_bg; color: @k_text; font-size: 13px; border: 1px solid @k_border; border-radius: 6px; }
+window.kr-window.maximized, window.kr-window.fullscreen, window.kr-window.tiled { border-radius: 0; }
+window.kr-window, window.kr-window * { box-shadow: none; text-shadow: none; -gtk-icon-shadow: none; }
+window.kr-window:backdrop > * { opacity: 0.9; }
+
+/* trilho */
+.kr-rail { background: @k_base; padding: 12px 10px; }
+.kr-rail-div { background: @k_border; min-height: 1px; margin: 4px 4px; }
+button.kr-rail-btn { all: unset; min-width: 44px; min-height: 40px; border-radius: 4px; }
+button.kr-rail-btn:hover { background: alpha(@k_realce, 0.05); }
+button.kr-rail-btn.active { background-color: alpha(@k_accent, 0.18); background-image: linear-gradient(@k_accent, @k_accent);
+  background-size: 3px 16px; background-position: left center; background-repeat: no-repeat; }
+
+/* barra de ferramentas */
+.kr-toolbar { min-height: 48px; padding: 0 10px 0 12px; border-bottom: 1px solid @k_border; }
+.kr-title { font-size: 13px; font-weight: 600; color: @k_text; }
+.kr-search { background: @k_field; border: 1px solid @k_border; border-radius: 4px; min-height: 30px; padding: 0 8px 0 10px; }
+.kr-search entry, entry.kr-plain { all: unset; font-size: 12px; color: @k_text; min-height: 28px; caret-color: @k_text; }
+.kr-search entry placeholder, entry.kr-plain placeholder { color: @k_muted; }
+.kr-kbd { background: @k_control; border-radius: 4px; padding: 1px 6px; font-size: 12px; font-weight: 600; color: @k_muted; }
+button.kr-icon-btn { all: unset; min-width: 30px; min-height: 30px; border-radius: 4px; }
+button.kr-icon-btn:hover { background: alpha(@k_realce, 0.06); }
+button.kr-icon-btn.small { min-width: 28px; min-height: 28px; }
+button.kr-winctl { all: unset; min-width: 16px; min-height: 16px; border-radius: 99px; background: @k_mensagem; }
+button.kr-winctl:hover { background: @k_raised; }
+
+/* página e cartões */
+.kr-page { padding: 24px; }
+.kr-card { background: @k_surface; border: 1px solid @k_border; border-radius: 6px; padding: 18px; }
+.kr-section { font-size: 12px; font-weight: 600; letter-spacing: 1px; color: @k_muted; }
+.kr-caption { font-size: 12px; color: @k_muted; }
+.kr-note { font-size: 12px; color: @k_dim; }
+.kr-small-note { font-size: 11px; color: @k_dim; }
+.kr-body { font-size: 13px; color: @k_text; }
+.kr-text2 { font-size: 12px; font-weight: 500; color: @k_text2; }
+.kr-div { background: @k_border; min-height: 1px; }
+.kr-vdiv { background: @k_border; min-width: 1px; }
+.kr-code { font-size: 30px; font-weight: 600; color: @k_text; }
+.kr-linkbox { background: @k_field; border-radius: 4px; padding: 6px 8px; }
+.kr-linktext { font-size: 12px; color: @k_text; }
+.kr-dots { font-size: 13px; letter-spacing: 2px; color: @k_text; }
+.kr-pass { font-size: 15px; font-weight: 600; letter-spacing: 2px; color: @k_text; font-family: "JetBrains Mono", monospace; }
+.kr-qr { background: #FFFFFF; border-radius: 4px; }
+.kr-link-btn, button.kr-link-btn { all: unset; font-size: 12px; font-weight: 600; color: @k_accent_text; }
+button.kr-link-btn:hover { text-decoration: underline; }
+
+/* barra de tempo */
+.kr-track { background: @k_raised; border-radius: 2px; min-height: 3px; }
+.kr-track > .fill { background: @k_teal; border-radius: 2px; min-height: 3px; }
+.kr-track.gold > .fill { background: @k_gold; }
+.kr-track.coral > .fill { background: @k_coral; }
+.kr-track.accent > .fill { background: @k_accent; }
+
+/* selos */
+.kr-badge { border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 600; }
+.kr-badge .dot { min-width: 6px; min-height: 6px; border-radius: 99px; }
+.kr-badge.teal { background: alpha(@k_teal, 0.14); color: @k_teal; }
+.kr-badge.teal .dot { background: @k_teal; }
+.kr-badge.blue { background: alpha(@k_blue, 0.14); color: @k_blue; }
+.kr-badge.blue .dot { background: @k_blue; }
+.kr-badge.coral { background: alpha(@k_coral, 0.14); color: @k_coral; }
+.kr-badge.coral .dot { background: @k_coral; }
+.kr-badge.gold { background: alpha(@k_gold, 0.14); color: @k_gold; }
+.kr-badge.gold .dot { background: @k_gold; }
+.kr-badge.dim { background: alpha(@k_dim, 0.14); color: @k_muted; }
+.kr-badge.dim .dot { background: @k_dim; }
+.kr-tag { border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; background: @k_control; color: @k_text2; }
+.kr-tag.accent { background: alpha(@k_accent, 0.18); color: @k_accent_text; }
+.kr-tag.coral { background: alpha(@k_coral, 0.16); color: @k_coral; }
+.kr-tag.gold { background: alpha(@k_gold, 0.16); color: @k_gold; }
+.kr-tag.teal { background: alpha(@k_teal, 0.16); color: @k_teal; }
+.kr-tag.blue { background: alpha(@k_blue, 0.16); color: @k_blue; }
+
+/* botões */
+button.kr-btn { all: unset; min-height: 32px; padding: 0 14px; border-radius: 4px; font-size: 12px; font-weight: 600;
+  background: @k_control; color: @k_text; }
+button.kr-btn:hover { background: @k_raised; }
+button.kr-btn:disabled { opacity: 0.45; }
+button.kr-btn.primary { background: @k_accent; color: @k_accent_fg; }
+button.kr-btn.primary:hover { background: shade(@k_accent, 1.06); }
+button.kr-btn.danger { background: alpha(@k_coral, 0.16); color: @k_coral; }
+button.kr-btn.danger:hover { background: alpha(@k_coral, 0.24); }
+button.kr-btn.ghost { background: none; }
+button.kr-btn.ghost:hover { background: alpha(@k_realce, 0.06); }
+button.kr-btn.tall { min-height: 40px; padding: 0 18px; }
+button.kr-btn.chip { min-height: 26px; padding: 0 10px; }
+button.kr-btn.agent { background: alpha(@k_accent, 0.18); color: @k_accent_text; }
+
+/* linhas com interruptor */
+.kr-row-title { font-size: 13px; font-weight: 500; color: @k_text; }
+.kr-row-sub { font-size: 12px; color: @k_muted; }
+switch { background: @k_control; border-radius: 99px; border: none; min-width: 40px; min-height: 22px; }
+switch:checked { background: @k_accent; }
+switch slider { background: @k_knob; border-radius: 99px; min-width: 18px; min-height: 18px; margin: 2px 0 2px 2px;
+  border: 1px solid @k_knob_borda; }
+switch:checked slider { margin: 2px 2px 2px 0; }
+switch image { color: transparent; }
+
+/* pedir ao agente */
+.kr-agent { background: alpha(@k_accent, 0.08); border: 1px solid alpha(@k_accent, 0.30); border-radius: 6px; padding: 16px; }
+.kr-field { background: @k_field; border: 1px solid @k_border; border-radius: 6px; min-height: 38px; padding: 0 12px; }
+.kr-field entry, entry.kr-field-entry { all: unset; font-size: 13px; color: @k_text; min-height: 36px; caret-color: @k_text; }
+.kr-field entry placeholder { color: @k_dim; }
+.kr-field.focus { border-color: alpha(@k_accent, 0.7); }
+.kr-field.error { border: 1.5px solid @k_coral; }
+
+/* segmentado */
+.kr-seg { background: @k_bg; border: 1px solid @k_border; border-radius: 4px; padding: 3px; }
+.kr-seg > button { all: unset; min-height: 15px; padding: 6px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; color: @k_text2; }
+.kr-seg > button:hover { color: @k_text; }
+.kr-seg > button:checked { background: @k_mensagem; color: @k_text; }
+
+/* dispositivos */
+.kr-device { background: @k_surface; border: 1px solid @k_border; border-radius: 6px; padding: 8px; }
+.kr-device:hover { background: @k_raised; }
+.kr-thumb { background: @k_sunken; border-radius: 4px; }
+.kr-state { background: @k_panel; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 600; color: @k_text; }
+.kr-state .dot { min-width: 7px; min-height: 7px; border-radius: 99px; background: @k_teal; }
+.kr-state.off .dot { background: @k_dim; }
+.kr-device-name { font-size: 13px; font-weight: 600; color: @k_text; }
+.kr-empty { font-size: 12px; color: @k_dim; padding: 18px 0; }
+
+/* passos (conectando) */
+.kr-step-title { font-size: 13px; color: @k_text; }
+.kr-step-sub { font-size: 11px; color: @k_dim; }
+.kr-error-text { font-size: 12px; color: @k_coral; }
+
+/* avisos e menus */
+.kr-toast { background: @k_raised; border: 1px solid @k_border; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; color: @k_text; }
+popover.kr-menu > contents { background: @k_sunken; border: 1px solid @k_border; border-radius: 6px; padding: 6px; }
+popover.kr-menu > arrow { background: none; border: none; min-height: 0; min-width: 0; }
+.kr-menu-item { all: unset; padding: 8px 10px; border-radius: 4px; }
+button.kr-menu-item:hover { background: alpha(@k_realce, 0.06); }
+.kr-menu-title { font-size: 13px; color: @k_text; }
+.kr-menu-sub { font-size: 11px; color: @k_muted; }
+
+scrolledwindow, viewport { background: none; }
+scrollbar { background: none; border: none; }
+scrollbar slider { background: alpha(@k_realce, 0.15); border-radius: 99px; min-width: 6px; min-height: 6px; }
+
+/* títulos e textos */
+.kr-big-title { font-size: 15px; font-weight: 600; color: @k_text; }
+.kr-strong { font-weight: 600; }
+.kr-link-text { font-size: 12px; font-weight: 600; color: @k_accent_text; }
+progressbar.kr-indeterminate trough { background: @k_raised; border-radius: 2px; min-height: 3px; border: none; }
+progressbar.kr-indeterminate progress { background: @k_gold; border-radius: 2px; min-height: 3px; border: none; }
+
+/* listas suspensas e caixas de marcar (os do KalangoOS, não os do tema GTK) */
+dropdown.kr-dropdown > button { all: unset; background: @k_field; border: 1px solid @k_border; border-radius: 4px; min-height: 34px; padding: 0 12px; font-size: 13px; color: @k_text; }
+dropdown.kr-dropdown > button:hover { border-color: @k_divider; }
+dropdown.kr-dropdown popover > contents { background: @k_sunken; border: 1px solid @k_border; border-radius: 6px; padding: 4px; }
+dropdown.kr-dropdown popover row { border-radius: 4px; padding: 6px 8px; color: @k_text; }
+dropdown.kr-dropdown popover row:selected, dropdown.kr-dropdown popover row:hover { background: alpha(@k_realce, 0.06); }
+checkbutton { color: @k_text; font-size: 13px; }
+checkbutton check { min-width: 16px; min-height: 16px; border-radius: 4px; border: 1.5px solid @k_dim; background: none; color: transparent; -gtk-icon-source: none; }
+checkbutton check:checked { background-color: @k_accent; border-color: @k_accent; color: @k_accent_fg; -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); }
+checkbutton check:disabled:checked { opacity: 0.8; }
+checkbutton:disabled label { color: @k_text2; }
+checkbutton.kr-radio radio { min-width: 16px; min-height: 16px; border-radius: 99px; border: 1.5px solid @k_dim; background: none; -gtk-icon-source: none; }
+checkbutton.kr-radio radio:checked { border: 5px solid @k_accent; background: @k_accent_fg; }
+
+/* diálogo de pedido de acesso */
+window.kr-dialog { background: @k_surface; border-radius: 8px; }
+.kr-dialog-body { padding: 20px; }
+.kr-who { background: @k_mensagem; border-radius: 6px; padding: 12px; }
+.kr-avatar { min-width: 44px; min-height: 44px; border-radius: 99px; background: alpha(@k_accent, 0.18); color: @k_accent_text; font-size: 15px; font-weight: 600; }
+.kr-perm { padding: 4px 6px; }
+.kr-warn { background: alpha(@k_gold, 0.08); border: 1px solid alpha(@k_gold, 0.25); border-radius: 6px; padding: 10px 12px; }
+
+/* indicador "está controlando" */
+window.kr-banner-window { background: none; border: none; }
+.kr-controlled { background: @k_sunken; border: 1px solid @k_coral; border-radius: 8px; padding: 6px 8px 6px 14px; }
+.kr-rec-dot { min-width: 8px; min-height: 8px; border-radius: 99px; background: @k_coral; }
+.kr-rec-dot.teal { background: @k_teal; }
+window.kr-outline { background: none; border: 2px solid @k_coral; border-radius: 0; }
+window.kr-outline.teal { border-color: @k_teal; }
+
+/* sessão */
+window.kr-session { background: @k_scrim; }
+.kr-session-bar { background: @k_bg; min-height: 40px; padding: 0 10px; border-bottom: 1px solid @k_border; }
+.kr-screen { background: @k_scrim; }
+.kr-route { border-radius: 4px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
+.kr-route.teal { background: alpha(@k_teal, 0.12); color: @k_teal; }
+.kr-route.blue { background: alpha(@k_blue, 0.12); color: @k_blue; }
+.kr-route.gold { background: alpha(@k_gold, 0.12); color: @k_gold; }
+.kr-floatbar { background: @k_sunken; border: 1px solid @k_border; border-radius: 8px; padding: 4px; }
+menubutton.kr-tool > button, button.kr-tool { all: unset; min-height: 32px; min-width: 32px; padding: 0 8px; border-radius: 4px; font-size: 12px; font-weight: 500; color: @k_text; }
+menubutton.kr-tool > button:hover, button.kr-tool:hover, menubutton.kr-tool > button:checked { background: alpha(@k_realce, 0.06); }
+.kr-stats { padding: 0 8px; font-size: 12px; color: @k_text2; }
+.kr-handle { background: alpha(@k_realce, 0.35); border-radius: 99px; }
+.kr-banner { background: @k_sunken; border: 1px solid @k_gold; border-radius: 8px; padding: 8px 10px 8px 14px; }
+.kr-lost { background: alpha(@k_sunken, 0.96); border: 1px solid @k_border; border-radius: 8px; padding: 22px 28px; }
+.kr-chat { background: @k_sunken; border: 1px solid @k_border; border-radius: 8px; }
+.kr-chat-head { padding: 12px 12px 12px 16px; border-bottom: 1px solid @k_border; }
+.kr-chat-list { padding: 14px; }
+.kr-bubble { background: @k_mensagem; border-radius: 6px; padding: 8px 10px; }
+.kr-bubble.mine { background: @k_raised; }
+entry.kr-chat-entry { all: unset; margin: 10px; padding: 10px 12px; background: @k_field; border: 1px solid @k_border; border-radius: 6px; font-size: 13px; color: @k_text; }
+
+/* transferir arquivos */
+.kr-transfer { background: @k_surface; border: 1px solid @k_border; border-radius: 8px; }
+.kr-transfer-head { padding: 14px 16px; border-bottom: 1px solid @k_border; }
+.kr-pane { padding: 14px 16px; }
+.kr-transfer-mid { padding: 0 12px; background: @k_bg; }
+list.kr-files { background: none; }
+list.kr-files > row { border-radius: 4px; padding: 0; }
+list.kr-files > row:selected { background: @k_mensagem; }
+list.kr-files > row:hover { background: alpha(@k_realce, 0.04); }
+.kr-file-row { padding: 7px 8px; }
+.kr-queue { padding: 12px 16px; border-top: 1px solid @k_border; }
+
+/* ajustes: opções de rede */
+.kr-option { border: 1px solid @k_border; border-radius: 6px; padding: 12px 14px; }
+.kr-option.selected { background: alpha(@k_accent, 0.06); border-color: alpha(@k_accent, 0.6); }
+.kr-history-row { padding: 12px 14px; }

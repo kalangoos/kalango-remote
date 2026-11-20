@@ -30,9 +30,35 @@
 
 ## Estado
 
-Em desenvolvimento. As telas estão desenhadas no Design System do KalangoOS (página "Kalango Remote"); o app nativo
-em GTK 4 e as provas de conceito (o túnel do Cloudflare e a captura e o controle da tela no compositor do KalangoOS,
-Wayland) estão sendo feitos agora. As instruções para compilar e rodar entram aqui junto com o primeiro app.
+Em desenvolvimento, já usável entre dois computadores Linux. O que funciona e foi testado (detalhes e números em
+[`docs/POC.md`](docs/POC.md)):
+
+- **Compartilhar** pelo túnel rápido do Cloudflare (sem conta e sem servidor nosso) ou só na rede local; código,
+  link, QR, senha de uso único, prazo, pedido de acesso com aprovação e o indicador "está controlando".
+- **Conectar** por link (de qualquer lugar, sem precisar do `cloudflared` deste lado) ou por código (na mesma rede),
+  sempre **cifrado de ponta a ponta**: o convite leva a identidade de quem compartilha e outra chave é recusada.
+- **Sessão** com a tela remota, barra que se esconde, qualidade, escala, chat, transferência de arquivos e
+  reconexão. No KalangoOS (niri), a captura é por `wlr-screencopy` e o controle por teclado e ponteiro virtuais.
+
+Ainda não: compartilhar por servidor próprio, verificação em duas etapas, gravar sessões e o modo privacidade.
+Não testado: o niri numa sessão de verdade (só aninhado) e dois computadores físicos.
+
+### Compilar e rodar (Ubuntu 24.04, sem sudo)
+
+```sh
+kalangoos/scripts/deps.sh            # bibliotecas de desenvolvimento e a fonte Inter em kalangoos/.deps
+kalangoos/scripts/cloudflared.sh     # cloudflared 2026.10.7 com SHA-256 conferido (só quem compartilha precisa)
+source kalangoos/scripts/env.sh
+cargo build -p kalango-remote -p kalango-remote-core --features kalango-remote-core/linux-pkg-config
+kalangoos/scripts/rodar-app.sh       # o app; --demo abre com um perfil descartável de dados inventados
+```
+
+O `gtk4-layer-shell` (contorno e aviso "está controlando" por cima da tela) vem do KalangoOS; fora dele, o
+`env.sh` usa a cópia compilada em `SDRustOS/poc/.deps` quando o repositório do KalangoOS está ao lado.
+
+Testes: `cargo test -p kalango-remote -p kalango-remote-proto -p kalango-remote-core -p wlr_remote
+--features kalango-remote-core/linux-pkg-config`; sessões de verdade com `kalangoos/scripts/testar-sessao.sh`
+(direto, túnel, código, impostor, aprovação, niri) e o fluxo pela interface com `kalangoos/scripts/testar-app.sh`.
 
 ## Como o repositório se organiza
 

@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 ROOT=$PWD/.deps/root
 mkdir -p .deps/debs "$ROOT"
 pkgs="libvpx-dev libaom-dev libopus-dev libyuv-dev libyuv0 libpam0g-dev libxcb-randr0-dev libxcb-shape0-dev
-      libxcb-xfixes0-dev libasound2-dev libpulse-dev libxdo-dev libva-dev"
+      libxcb-xfixes0-dev libasound2-dev libpulse-dev libxdo-dev libva-dev fonts-inter"
 need=""
 for p in $pkgs; do
   dpkg -s "$p" >/dev/null 2>&1 && continue   # já instalado no sistema
@@ -44,4 +44,10 @@ Version: 0.0
 Libs: -L\${libdir} -lyuv
 Cflags: -I\${includedir}
 PC
+# as fontes do KalangoOS (Inter) para rodar o app aqui: um fonts.conf que soma a pasta local às do sistema
+cat > "$PWD/.deps/fonts.conf" <<FC
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>$ROOT/usr/share/fonts</dir></fontconfig>
+FC
 echo "dependências em $ROOT"

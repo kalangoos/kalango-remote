@@ -12,6 +12,7 @@ cfg_if! {
             if #[cfg(feature="wayland")] {
                 mod linux;
                 mod wayland;
+                mod wlr;
                 mod x11;
                 #[cfg(all(target_os = "linux", feature = "drm"))]
                 pub mod drmtap_dl;
@@ -273,6 +274,11 @@ pub fn is_x11() -> bool {
 #[cfg(x11)]
 #[inline]
 pub fn is_cursor_embedded() -> bool {
+    // Kalango Remote's wlr capture draws the cursor into the frames
+    #[cfg(feature = "wayland")]
+    if wlr_remote::active() {
+        return true;
+    }
     if is_x11() {
         x11::IS_CURSOR_EMBEDDED
     } else {

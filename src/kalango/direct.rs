@@ -29,6 +29,11 @@ pub async fn run(opts: DirectOptions, on_listening: impl FnOnce(SocketAddr)) -> 
             log::error!("kalango direct: config ipc failed: {err}");
         }
     });
+    if wlr_remote::active() {
+        if let Err(e) = super::wlr_input::setup() {
+            log::error!("kalango direct: no wlr input ({e}); the screen can be seen but not controlled");
+        }
+    }
     let server = crate::server::new();
     let ip = if opts.loopback_only {
         Ipv4Addr::LOCALHOST

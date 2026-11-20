@@ -773,6 +773,19 @@ pub async fn setup_uinput(minx: i32, maxx: i32, miny: i32, maxy: i32) -> ResultT
     Ok(())
 }
 
+/// Kalango Remote: replace the keyboard and mouse with custom devices (wlr virtual input on niri).
+#[cfg(target_os = "linux")]
+pub fn set_custom_input(
+    keyboard: Box<dyn enigo::KeyboardControllable + Send>,
+    mouse: Box<dyn enigo::MouseControllable + Send>,
+) {
+    let mut en = ENIGO.lock().unwrap();
+    // RustDesk runs its X11 code paths with this backend; enigo must still use the custom devices
+    en.set_is_x11(false);
+    en.set_custom_keyboard(keyboard);
+    en.set_custom_mouse(mouse);
+}
+
 #[cfg(target_os = "linux")]
 pub async fn setup_rdp_input() -> ResultType<(), Box<dyn std::error::Error>> {
     let mut en = ENIGO.lock()?;

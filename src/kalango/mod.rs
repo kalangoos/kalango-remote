@@ -16,6 +16,7 @@
 pub mod cm;
 pub mod direct;
 pub mod session;
+pub mod wlr_input;
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -54,6 +55,18 @@ pub(crate) fn approve_after_password() -> bool {
 pub fn identity() -> (String, Vec<u8>) {
     let (_sk, pk) = Config::get_key_pair();
     (Config::get_id(), pk)
+}
+
+/// Turns on capture and input through wlr protocols when the compositor offers them (niri has no
+/// RemoteDesktop portal). Must run before anything asks whether this is X11: RustDesk then takes its
+/// X11-shaped paths (`RUSTDESK_FORCED_DISPLAY_SERVER`), and `scrap`/enigo use the wlr backends.
+pub fn use_wlr_if_available() -> bool {
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() || !wlr_remote::available() {
+        return false;
+    }
+    std::env::set_var("KALANGO_WLR", "1");
+    std::env::set_var("RUSTDESK_FORCED_DISPLAY_SERVER", "x11");
+    true
 }
 
 /// Names this build's config and IPC namespace, so it never shares state with an installed RustDesk.

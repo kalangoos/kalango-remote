@@ -26,6 +26,8 @@ pub struct Exit {
     pub code: Option<i32>,
     /// the first line it wrote to stderr (the cause when it could not even start, e.g. a missing library)
     pub first_error: String,
+    /// the last line it wrote to stderr (the cause when it stopped later)
+    pub last_error: String,
 }
 
 /// Where the core is: `KALANGO_REMOTE_CORE`, or next to this program.
@@ -58,15 +60,23 @@ impl Core {
         let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout"))?;
         // stderr still reaches ours line by line; the first line is kept for the error state
         let first_error = Arc::new(Mutex::new(None::<String>));
+        let last_error = Arc::new(Mutex::new(String::new()));
         if let Some(err) = child.stderr.take() {
             let first = first_error.clone();
+            let last = last_error.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(err).lines().map_while(Result::ok) {
-                    eprintln!("{line}");
-                    let mut f = first.lock().unwrap();
-                    if f.is_none() && !line.trim().is_empty() {
-                        *f = Some(line);
+                    // never eprintln! here: if our stderr breaks it panics, this thread ends, and the core
+                    // dies of SIGPIPE at its next log line
+                    let _ = writeln!(std::io::stderr(), "{line}");
+                    if line.trim().is_empty() {
+                        continue;
                     }
+                    let mut f = first.lock().unwrap();
+                    if f.is_none() {
+                        *f = Some(line.clone());
+                    }
+                    *last.lock().unwrap() = line;
                 }
             });
         }
@@ -104,7 +114,8 @@ impl Core {
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
             let first_error = first_error.lock().unwrap().clone().unwrap_or_default();
-            tx.send_blocking(Msg::Exited(Exit { code, first_error })).ok();
+            let last_error = last_error.lock().unwrap().clone();
+            tx.send_blocking(Msg::Exited(Exit { code, first_error, last_error })).ok();
         });
         glib::spawn_future_local(async move {
             while let Ok(m) = rx.recv().await {

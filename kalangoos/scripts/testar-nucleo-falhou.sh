@@ -104,4 +104,32 @@ sys.exit(0 if gold > 20 else 1)
 PY
 kill -0 $HP 2>/dev/null || falhou "o núcleo que já servia caiu"
 echo "   ok: com outro compartilhando, o cartão diz isso e o outro continua de pé"
+
+# um núcleo que começa (diz "listening") e para 1,5 s depois: o cartão não volta ao início calado
+kill $AP $HP; exec 3>&-; sleep 1
+cat > "$T/para-depois" <<SH
+#!/bin/sh
+"$PWD/target/debug/kalango-remote-core" "\$@" &
+P=\$!
+sleep 1.5
+kill \$P
+wait \$P
+SH
+chmod +x "$T/para-depois"
+KALANGO_REMOTE_CORE="$T/para-depois" setsid kalangoos/scripts/rodar-app.sh --demo > "$T/app3.log" 2>&1 &
+AP=$!
+sleep 4
+X mousemove 1500 600; sleep 0.5
+X mousemove "$SX" "$SY" click 1
+sleep 4
+cap 23-nucleo-parou
+grep -q "o núcleo saiu" "$T/app3.log" || falhou "o app não registrou a saída do núcleo"
+python3 - "$O/23-nucleo-parou.png" <<'PY' || falhou "o cartão não mostra o núcleo parado (selo coral)"
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+coral = sum(1 for x in range(im.size[0]) for y in range(100, 140) if (lambda p: abs(p[0]-239) < 25 and abs(p[1]-162) < 30 and abs(p[2]-166) < 30)(im.getpixel((x, y))))
+sys.exit(0 if coral > 20 else 1)
+PY
+echo "   ok: o núcleo que para depois de começar também aparece como erro ($(grep -a 'o núcleo saiu' "$T/app3.log" | head -1 | cut -c1-80))"
 echo OK

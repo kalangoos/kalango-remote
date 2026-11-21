@@ -117,6 +117,7 @@ impl Incoming {
                     self.revoke();
                 }
                 if let Some(a) = ended {
+                    crate::shell_sound::play("kalango-remote-stop");
                     a.banner.destroy();
                     if let Some(o) = a.outline {
                         o.destroy();
@@ -316,6 +317,8 @@ impl Incoming {
     }
 
     fn start_indicator(self: &Rc<Incoming>, id: i32, v: &Value) {
+        // someone came in: the session's sound (KalangoOS's shell plays it)
+        crate::shell_sound::play("kalango-remote-start");
         let name = v["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(tr("Someone")).to_owned();
         let keyboard = v["keyboard"].as_bool().unwrap_or(true);
         let outline = outline_window(keyboard);

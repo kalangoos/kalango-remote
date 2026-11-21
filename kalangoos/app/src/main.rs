@@ -16,6 +16,7 @@ mod kalangod;
 mod secrets;
 mod session;
 mod settings;
+mod shell_sound;
 mod ssh;
 mod store;
 mod ui;

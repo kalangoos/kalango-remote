@@ -244,3 +244,14 @@ button.kr-chip:checked { background: alpha(@k_accent, 0.18); color: @k_accent_te
 .kr-table-row:hover { background: alpha(@k_realce, 0.03); }
 .kr-pad { padding: 12px 16px; }
 window.kr-dialog.kr-danger { border: 1px solid @k_coral; }
+
+/* the agent's plan panel */
+.kr-plan { background: @k_sunken; border: 1px solid @k_border; border-radius: 8px; padding: 18px; }
+.kr-plan-title { font-size: 14px; font-weight: 600; color: @k_text; }
+.kr-plan-intro { font-size: 13px; color: @k_text2; }
+.kr-plan-request { background: alpha(@k_accent, 0.16); border-radius: 6px; padding: 8px 12px; }
+.kr-plan-step { background: @k_surface; border: 1px solid @k_border; border-radius: 6px; padding: 10px; }
+.kr-plan-mark { background: @k_raised; border-radius: 99px; min-width: 22px; min-height: 22px; font-size: 12px; font-weight: 600; color: @k_text; }
+.kr-plan-limits { background: alpha(@k_accent, 0.06); border-radius: 6px; padding: 10px; }
+.kr-plan-limits-text { font-size: 12px; color: @k_text2; }
+button.kr-btn.muted { color: @k_muted; }

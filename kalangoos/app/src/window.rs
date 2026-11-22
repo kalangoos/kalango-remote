@@ -1,12 +1,15 @@
 //! The main window: the rail (the app, then its areas), the toolbar (title, search or ask, menu, the
 //! window's buttons) and the pages.
 
-use gtk::{gdk, glib, prelude::*, Align, Orientation};
+use gtk::{gdk, gio, glib, prelude::*, Align, Orientation};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     home::Home,
     i18n::{n_, tr},
+    plan::{Decision, Plan},
+    plan_panel::PlanPanel,
+    session::Kind,
     settings::SettingsPage,
     store::{Peers, Settings},
     ui,
@@ -33,6 +36,7 @@ pub struct Window {
     /// sessions with a window open (the home page lets go of them once connected)
     pub sessions: RefCell<Vec<Rc<crate::session::Session>>>,
     /// the SSH page (its handlers hold weak references: the window keeps it alive)
+    plan: RefCell<Option<Rc<PlanPanel>>>,
     pub ssh: RefCell<Option<Rc<crate::ssh::page::SshPage>>>,
 }
 
@@ -150,6 +154,7 @@ impl Window {
             search,
             sessions: RefCell::new(Vec::new()),
             ssh: RefCell::new(None),
+            plan: RefCell::new(None),
         });
 
         // pages
@@ -256,6 +261,69 @@ impl Window {
         }
     }
 
+    /// Shows the agent's plan for approval. The agent's command (`agent-plan`) stays open until the person
+    /// decides; then it gets the decision on stdout and its exit status. A plan still waiting is cancelled.
+    pub fn show_plan(self: &Rc<Window>, plan: Plan, cmd: gio::ApplicationCommandLine) {
+        if let Some(old) = self.plan.borrow_mut().take() {
+            old.decide(Decision::Cancelled);
+        }
+        let me = Rc::downgrade(self);
+        let p = plan.clone();
+        let panel = PlanPanel::new(&plan, move |d| {
+            let mut connecting = false;
+            if let Some(w) = me.upgrade() {
+                connecting = w.on_plan_decision(&p, d);
+                if let Some(panel) = w.plan.borrow_mut().take() {
+                    w.overlay.remove_overlay(&panel.root);
+                }
+            }
+            cmd.print_literal(&format!("{}\n", p.answer(d, connecting)));
+            cmd.set_exit_status(d.exit_status());
+        });
+        self.overlay.add_overlay(&panel.root);
+        let root = panel.root.clone();
+        ui::on_width(&self.overlay, move |width| {
+            // the panel is 560 wide; a narrower window gives it the whole width
+            let narrow = width < 560 + 28;
+            root.set_halign(if narrow { Align::Fill } else { Align::End });
+            root.set_size_request(if narrow { -1 } else { 560 }, -1);
+            root.set_margin_start(if narrow { 14 } else { 0 });
+        });
+        *self.plan.borrow_mut() = Some(panel);
+        self.show_page("home");
+    }
+
+    /// What the decision does here: approving starts the connection to the device (the one thing the agent
+    /// cannot do alone: the other computer's password is asked as usual); adjusting hands the request back to the
+    /// search field. Returns whether a connection was started.
+    fn on_plan_decision(&self, plan: &Plan, d: Decision) -> bool {
+        match d {
+            Decision::Approved => {
+                let target = if plan.target.is_empty() {
+                    let name = plan.device.to_lowercase();
+                    self.peers.borrow().list.iter().find(|p| p.name.to_lowercase() == name).map(|p| p.target.clone()).unwrap_or_default()
+                } else {
+                    plan.target.clone()
+                };
+                let Some(home) = self.home.borrow().clone() else { return false };
+                if target.is_empty() {
+                    self.toast(&crate::i18n::trf("Paste the code or link of {device} to connect", &[("device", plan.device.clone())]));
+                    return false;
+                }
+                self.show_page("home");
+                home.connect_to(&target, Kind::Control);
+                true
+            }
+            Decision::Adjust => {
+                self.search.set_text(&plan.request);
+                self.search.grab_focus();
+                self.search.set_position(-1);
+                false
+            }
+            Decision::Cancelled => false,
+        }
+    }
+
     pub fn settings_changed(&self) {
         self.settings.borrow().save();
         if let Some(h) = self.home.borrow().clone() {
@@ -277,5 +345,43 @@ fn dump_min(w: &gtk::Widget, depth: usize) {
     while let Some(ch) = c {
         c = ch.next_sibling();
         dump_min(&ch, depth + 1);
+    }
+}
+
+/// `kalango-remote agent-plan FILE|-`: the agent's plan, read from the file or from stdin.
+pub fn agent_plan(app: &gtk::Application, cmd: &gio::ApplicationCommandLine, source: Option<&str>) -> i32 {
+    let fail = |msg: String| {
+        cmd.printerr_literal(&format!("kalango-remote: {msg}\n"));
+        2
+    };
+    let text = match source {
+        Some("-") => match cmd.stdin() {
+            Some(s) => match s.read_bytes(crate::plan::MAX_BYTES + 1, gio::Cancellable::NONE) {
+                Ok(b) => String::from_utf8_lossy(&b).into_owned(),
+                Err(e) => return fail(e.to_string()),
+            },
+            None => return fail("no stdin".into()),
+        },
+        Some(path) => {
+            let p = cmd.cwd().map(|c| c.join(path)).unwrap_or_else(|| path.into());
+            match std::fs::File::open(&p).and_then(|f| {
+                use std::io::Read;
+                let mut s = String::new();
+                f.take(crate::plan::MAX_BYTES as u64 + 1).read_to_string(&mut s).map(|_| s)
+            }) {
+                Ok(s) => s,
+                Err(e) => return fail(format!("{}: {e}", p.display())),
+            }
+        }
+        None => return fail("usage: kalango-remote agent-plan FILE|-".into()),
+    };
+    match Plan::parse(&text) {
+        Ok(plan) => {
+            let w = Window::get_or_create(app);
+            w.present();
+            w.show_plan(plan, cmd.clone());
+            0
+        }
+        Err(e) => fail(e),
     }
 }

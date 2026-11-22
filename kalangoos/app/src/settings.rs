@@ -88,12 +88,15 @@ impl SettingsPage {
         let otp = dropdown(&[tr("6 characters, new"), tr("8 characters, new")], if s.otp_length == 8 { 1 } else { 0 });
         sec.append(&value_row(tr("One-time password"), "", &otp));
         sec.append(&bind_switch(ui::switch_row(tr("Lock the screen when the session ends"), ""), s.lock_after, &w, |s, v| s.lock_after = v));
-        sec.append(&bind_switch(
-            ui::switch_row(tr("Black screen here during unattended access"), tr("Whoever is nearby does not see what is done (privacy mode)")),
-            s.privacy_black,
-            &w,
-            |s, v| s.privacy_black = v,
-        ));
+        // privacy mode needs the compositor to show a cover only on this screen while the capture still sees the
+        // real one (wlr-screencopy captures the composited output, so a cover here would black out the other
+        // side too); until the KalangoOS niri can do that, the switch says so instead of pretending
+        let (priv_row, priv_sw, _) = ui::switch_row(
+            tr("Black screen here during unattended access"),
+            tr("Whoever is nearby does not see what is done (privacy mode). Needs support from the KalangoOS compositor; not available yet"),
+        );
+        priv_sw.set_sensitive(false);
+        sec.append(&priv_row);
         sec.append(&bind_switch(ui::switch_row(tr("Record every session"), tr("In Videos › Kalango Remote; deleted after 30 days")), s.record, &w, |s, v| s.record = v));
         left.append(&sec);
 

@@ -13,7 +13,8 @@ R=$PWD
 WT=${KALANGO_WT:-$PWD/../SDRustOS-worktrees/niri-remoto}
 export KALANGO_NIRI=${KALANGO_NIRI:-$WT/poc/.deps/src/niri/target/release/niri}
 KD=${KALANGOD:-$WT/target/debug/kalangod}
-DEPS=$(realpath "$PWD/../SDRustOS/poc/.deps")
+DEPS=$(realpath "${KALANGO_DEPS:-$PWD/../SDRustOS/poc/.deps}")
+DISP=${KALANGO_DISPLAY:-:89}   # o Xvfb em que o niri aninhado roda (um que já exista ou o próprio niri-aninhado.sh abre)
 T=$(mktemp -d /tmp/kalango-remote-permissao-XXXX)
 falhou() { echo "FALHOU: $*"; exit 1; }
 cat > "$T/kalangod.toml" <<CFG
@@ -47,7 +48,7 @@ chmod +x "$T/esc-duplo"
 export KALANGO_ESC_DUPLO="$T/esc-duplo"
 export KALANGO_NIRI_CONTROLE="$T/controle-remoto" KALANGO_NIRI_CONTROLE_DONO="$(id -u)" RUST_LOG="niri=info,niri::remote_control=debug"
 rm -f target/niri-aninhado/env
-setsid kalangoos/scripts/niri-aninhado.sh :89 1920x1080 > /dev/null 2>&1 &
+setsid kalangoos/scripts/niri-aninhado.sh "$DISP" 1920x1080 > /dev/null 2>&1 &
 NP=$!
 trap 'kill $KP 2>/dev/null; kill -- -$NP 2>/dev/null; echo "registros em $T"' EXIT
 for _ in $(seq 60); do [ -f target/niri-aninhado/env ] && break; sleep 0.5; done

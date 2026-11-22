@@ -8,7 +8,7 @@ DISP=${1:-:89}
 TAM=${2:-1280x800}
 cd "$(dirname "$0")/../.."
 SAIDA=${SAIDA:-$PWD/target/niri-aninhado}
-N=${KALANGO_NIRI:-$PWD/../SDRustOS/poc/.deps/src/niri/target/release/niri}
+N=${KALANGO_NIRI:-${KALANGO_DEPS:-$PWD/../SDRustOS/poc/.deps}/src/niri/target/release/niri}
 mkdir -p "$SAIDA"
 cat > "$SAIDA/niri.kdl" <<KDL
 output "winit" {

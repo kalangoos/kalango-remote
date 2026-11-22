@@ -29,7 +29,7 @@ trap 'kill $AP ${HP:-} 2>/dev/null; echo "registros em $T"' EXIT
 sleep 4
 X windowfocus --sync "$(X search --name '^niri$' | head -1)"
 SOCK=$(grep -ao "IPC listening on: [^ ]*" target/niri-aninhado/niri.log | tail -1 | awk '{print $NF}' | sed 's/\x1b\[[0-9;]*m//g')
-N=${KALANGO_NIRI:-$PWD/../SDRustOS/poc/.deps/src/niri/target/release/niri}
+N=${KALANGO_NIRI:-${KALANGO_DEPS:-$PWD/../SDRustOS/poc/.deps}/src/niri/target/release/niri}
 # o botão roxo largo de compartilhar, achado na captura (a janela muda de tamanho conforme a saída)
 DISPLAY="$DISPLAY" xdotool mousemove 1500 600   # o ponteiro longe (sem o realce de passar por cima)
 sleep 0.5

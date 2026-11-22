@@ -10,7 +10,7 @@ export BINDGEN_EXTRA_CLANG_ARGS="-I$_KR_ROOT/usr/include"
 export CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
 # gtk4-layer-shell (o contorno e o aviso "está controlando" por cima da tela): o KalangoOS traz; aqui vem da
 # cópia compilada pelo KalangoOS em SDRustOS/poc/.deps, quando ela existe ao lado deste repositório
-_KR_LS="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)/SDRustOS/poc/.deps/root/usr/lib/x86_64-linux-gnu"
+_KR_LS="${KALANGO_DEPS:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)/SDRustOS/poc/.deps}/root/usr/lib/x86_64-linux-gnu"
 if [ -f "$_KR_LS/pkgconfig/gtk4-layer-shell-0.pc" ]; then
   export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$_KR_LS/pkgconfig" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$_KR_LS"
 fi

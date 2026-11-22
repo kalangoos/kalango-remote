@@ -7,6 +7,8 @@
 //!   wlr-remote-poc click X Y
 //!   wlr-remote-poc type TEXT       (lowercase ASCII letters, digits and space)
 //!   wlr-remote-poc bench N         (N captures, prints frames per second)
+//!   wlr-remote-poc layer NS R G B  (a 400×60 layer-shell surface in the overlay layer, top centre, named NS, a
+//!                                   solid colour: a stand-in for the banner, used by the privacy mode test)
 
 use std::{
     os::fd::{AsFd, OwnedFd},
@@ -14,7 +16,7 @@ use std::{
 };
 
 use wayland_client::{
-    protocol::{wl_buffer, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool},
+    protocol::{wl_buffer, wl_compositor, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface},
     Connection, Dispatch, QueueHandle, WEnum,
 };
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
@@ -22,6 +24,10 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
 };
 use wayland_protocols_wlr::{
+    layer_shell::v1::client::{
+        zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
+        zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
+    },
     screencopy::v1::client::{
         zwlr_screencopy_frame_v1::{self, ZwlrScreencopyFrameV1},
         zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
@@ -42,6 +48,11 @@ struct State {
     screencopy: Option<ZwlrScreencopyManagerV1>,
     vpointer: Option<ZwlrVirtualPointerManagerV1>,
     vkeyboard: Option<ZwpVirtualKeyboardManagerV1>,
+    compositor: Option<wl_compositor::WlCompositor>,
+    layer_shell: Option<ZwlrLayerShellV1>,
+    /// the layer surface test client: the colour to paint and whether it was painted
+    layer_rgb: [u8; 3],
+    layer_configured: bool,
     frame: FrameState,
 }
 
@@ -79,6 +90,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 "zwlr_virtual_pointer_manager_v1" => {
                     st.vpointer = Some(reg.bind(name, version.min(2), qh, ()))
                 }
+                "wl_compositor" => st.compositor = Some(reg.bind(name, 4, qh, ())),
+                "zwlr_layer_shell_v1" => st.layer_shell = Some(reg.bind(name, 1, qh, ())),
                 "zwp_virtual_keyboard_manager_v1" => {
                     st.vkeyboard = Some(reg.bind(name, 1, qh, ()))
                 }
@@ -140,6 +153,46 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for State {
     }
 }
 
+impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
+    fn event(
+        st: &mut Self,
+        surface: &ZwlrLayerSurfaceV1,
+        ev: zwlr_layer_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let zwlr_layer_surface_v1::Event::Configure { serial, width, height } = ev {
+            surface.ack_configure(serial);
+            let (w, h) = (width.max(1) as usize, height.max(1) as usize);
+            let size = w * h * 4;
+            let fd = memfd(size);
+            let map = unsafe {
+                rustix::mm::mmap(std::ptr::null_mut(), size, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &fd, 0)
+            }
+            .expect("mmap");
+            let px = unsafe { std::slice::from_raw_parts_mut(map as *mut u8, size) };
+            for p in px.chunks_exact_mut(4) {
+                p.copy_from_slice(&[st.layer_rgb[2], st.layer_rgb[1], st.layer_rgb[0], 255]);
+            }
+            unsafe { rustix::mm::munmap(map, size).ok() };
+            let pool = st.shm.as_ref().unwrap().create_pool(fd.as_fd(), size as i32, qh, ());
+            let buf = pool.create_buffer(0, w as i32, h as i32, (w * 4) as i32, wl_shm::Format::Argb8888, qh, ());
+            LAYER_SURFACE.with(|s| {
+                if let Some(s) = s.borrow().as_ref() {
+                    s.attach(Some(&buf), 0, 0);
+                    s.commit();
+                }
+            });
+            st.layer_configured = true;
+        }
+    }
+}
+
+thread_local! {
+    static LAYER_SURFACE: std::cell::RefCell<Option<wl_surface::WlSurface>> = const { std::cell::RefCell::new(None) };
+}
+
 macro_rules! ignore {
     ($($t:ty),*) => {$(
         impl Dispatch<$t, ()> for State {
@@ -156,7 +209,10 @@ ignore!(
     ZwlrVirtualPointerManagerV1,
     ZwlrVirtualPointerV1,
     ZwpVirtualKeyboardManagerV1,
-    ZwpVirtualKeyboardV1
+    ZwpVirtualKeyboardV1,
+    wl_compositor::WlCompositor,
+    wl_surface::WlSurface,
+    ZwlrLayerShellV1
 );
 
 fn now_ms(t0: Instant) -> u32 {
@@ -326,6 +382,28 @@ fn main() {
             eq.roundtrip(&mut st).unwrap();
             println!("typed {:?}", text);
         }
-        _ => eprintln!("usage: capture FILE | bench N | move X Y | click X Y | type TEXT"),
+        Some("layer") => {
+            let ns = args.get(2).cloned().unwrap_or_else(|| "test".into());
+            let c = |i: usize| args.get(i).and_then(|v| v.parse().ok()).unwrap_or(0u8);
+            st.layer_rgb = [c(3), c(4), c(5)];
+            let surface = st.compositor.as_ref().expect("no wl_compositor").create_surface(&qh, ());
+            let ls = st.layer_shell.as_ref().expect("no zwlr_layer_shell_v1").get_layer_surface(
+                &surface,
+                None,
+                zwlr_layer_shell_v1::Layer::Overlay,
+                ns.clone(),
+                &qh,
+                (),
+            );
+            ls.set_size(400, 60);
+            ls.set_anchor(zwlr_layer_surface_v1::Anchor::Top);
+            LAYER_SURFACE.with(|s| *s.borrow_mut() = Some(surface.clone()));
+            surface.commit();
+            println!("layer {ns} up");
+            loop {
+                eq.blocking_dispatch(&mut st).unwrap();
+            }
+        }
+        _ => eprintln!("usage: capture FILE | bench N | move X Y | click X Y | type TEXT | layer NS R G B"),
     }
 }

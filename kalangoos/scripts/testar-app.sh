@@ -18,7 +18,7 @@ sleep 4
 X windowfocus --sync "$(X search --name '^niri$' | head -1)"
 cap 01-inicio 1500
 SOCK=$(grep -ao "IPC listening on: [^ ]*" target/niri-aninhado/niri.log | tail -1 | awk '{print $NF}' | sed 's/\x1b\[[0-9;]*m//g')
-N=${KALANGO_NIRI:-$PWD/../SDRustOS/poc/.deps/src/niri/target/release/niri}
+N=${KALANGO_NIRI:-${KALANGO_DEPS:-$PWD/../SDRustOS/poc/.deps}/src/niri/target/release/niri}
 # as janelas do app (o diálogo do pedido e a sessão também: pelo processo, não pelo app_id)
 janelas() { NIRI_SOCKET=$SOCK "$N" msg -j windows | python3 -c "import json,sys,os; ps={int(x) for x in sys.argv[1:]}; print(sum(1 for w in json.load(sys.stdin) if w['pid'] in ps))" $(pgrep -P $AP) $AP; }
 # os pontos abaixo valem para a janela de 1500 px com a borda esquerda em x=404: desloca pela posição real

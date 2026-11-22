@@ -3122,7 +3122,9 @@ impl Connection {
                     // Kalango Remote ("ask before each access"): the right password only lets the
                     // request reach the person at this computer, who still approves it (or not) in
                     // the request window; the approval arrives as ipc::Data::Authorize.
-                    if approve_after_password() {
+                    if approve_after_password()
+                        && self.conn_audit_primary_auth != ConnAuditPrimaryAuth::PermanentPassword
+                    {
                         self.try_start_cm(lr.my_id, lr.my_name, false);
                         return true;
                     }

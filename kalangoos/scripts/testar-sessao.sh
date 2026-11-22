@@ -9,6 +9,9 @@
 #             depois de 3 s e confere que nenhum quadro chegou antes
 #     niri    o lado compartilhado é um niri aninhado (kalangoos/scripts/niri-aninhado.sh rodando): captura e
 #             entrada por wlr; o probe clica numa janela de teste e digita, e o teste confere o que ela recebeu
+#     fixa    acesso sem supervisão: o servidor pede aprovação (--ask), mas a senha fixa entra sem ninguém aprovar
+#     duasetapas  verificação em duas etapas: sem o código do app autenticador a sessão não abre; com ele, abre
+#     gravar  o servidor grava a sessão que recebe numa pasta própria; o teste confere o arquivo de vídeo
 #     impostor  o convite traz outra chave: a sessão tem de ser recusada (sai 0 se foi)
 # O lado compartilhado captura o DISPLAY dado (um Xvfb, padrão :89). Sai 0 se o probe recebeu quadros
 # numa sessão cifrada de ponta a ponta. MOVIMENTO=1 anima a tela; QUADROS=N (padrão 30).
@@ -41,6 +44,16 @@ case "$MODO" in
     JP=$!
     sleep 3 ;;
   aprovar) ARGS=(--no-tunnel --ask) ;;
+  fixa) ARGS=(--no-tunnel --ask --setup-stdin)
+    SETUP='{"cmd":"setup","fixed_password":"senha-fixa-de-teste-1","otp_length":6}'
+    QUADROS=1 ;;
+  duasetapas) ARGS=(--no-tunnel --setup-stdin)
+    SEGREDO=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ   # 20 bytes ("12345678901234567890"); o núcleo exige 128 bits ou mais
+    SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"two_factor\":\"$SEGREDO\"}"
+    QUADROS=1 ;;
+  gravar) ARGS=(--no-tunnel --setup-stdin)
+    SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"record_dir\":\"$T/srv/Vídeos/Kalango Remote\"}"
+    MOVIMENTO=1 ;;
   *) echo "modo desconhecido: $MODO"; exit 2 ;;
 esac
 mkfifo "$T/entrada"
@@ -52,6 +65,7 @@ fi
 lado srv "$B" serve "${ARGS[@]}" < "$T/entrada" > "$T/serve.out" 2> "$T/serve.err" &
 SP=$!
 exec 3> "$T/entrada"   # mantém a entrada do servidor aberta
+[ -n "${SETUP:-}" ] && echo "$SETUP" >&3   # --setup-stdin: o primeiro pacote é a configuração
 trap 'exec 3>&-; kill $SP ${GP:-} ${JP:-} 2>/dev/null; wait $SP 2>/dev/null; echo "registros em $T"' EXIT
 campo() { python3 -c "import json,sys
 for l in open('$T/serve.out'):
@@ -67,12 +81,34 @@ case "$MODO" in
     ( for _ in $(seq 60); do grep -q '"event":"connection"' "$T/serve.out" && break; sleep 0.5; done
       sleep 3; CID=$(campo connection id); date +%s.%N > "$T/aprovado-em"
       echo "{\"cmd\":\"authorize\",\"id\":$CID,\"keyboard\":true,\"clipboard\":true,\"audio\":false,\"file\":false}" >&3 ) & ;;
+  fixa|duasetapas|gravar) ALVO="https://$ADDR/#k=$ID.$PK" ;;
   impostor) ALVO="https://$ADDR/#k=$ID.$(python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('='))")" ;;
   tunel)
     for _ in $(seq 60); do grep -q '"tunnel_ready"' "$T/serve.out" && grep -q '"tunnel"' "$T/serve.out" && break; sleep 0.5; done
     ALVO=$(campo tunnel link) ;;   # o núcleo só anuncia o link quando o nome já resolve
 esac
 echo "alvo: $ALVO  código: $CODE"
+if [ "$MODO" = fixa ]; then
+  # a senha de uso único, com "perguntar antes" ligado, continua esperando aprovação: nenhum quadro
+  lado cli timeout 60 "$B" probe "$ALVO" --password "$PW" --frames 1 --timeout 8 > "$T/uso-unico.out" 2> "$T/uso-unico.err"
+  if grep -q '"first_frame"' "$T/uso-unico.out"; then echo "FALHOU: a senha de uso único entrou sem aprovação"; exit 1; fi
+  echo "ok: a senha de uso único ficou esperando a aprovação (nenhum quadro)"
+  PW=senha-fixa-de-teste-1
+fi
+codigo_totp() { python3 - "$SEGREDO" <<'PY'
+import base64, hmac, hashlib, struct, sys, time
+k = base64.b32decode(sys.argv[1]); n = struct.pack(">Q", int(time.time()) // 30)
+h = hmac.new(k, n, hashlib.sha1).digest(); o = h[19] & 15
+print("%06d" % ((struct.unpack(">I", h[o:o+4])[0] & 0x7fffffff) % 10**6))
+PY
+}
+if [ "$MODO" = duasetapas ]; then
+  # sem o código: pede as duas etapas e nenhum quadro chega
+  lado cli timeout 60 "$B" probe "$ALVO" --password "$PW" --frames 5 --timeout 8 > "$T/sem-codigo.out" 2> "$T/sem-codigo.err"
+  if grep -q '"first_frame"' "$T/sem-codigo.out" || ! grep -q 'input-2fa' "$T/sem-codigo.out"; then echo "FALHOU: sem o código a sessão tinha de pedir as duas etapas e não abrir"; cat "$T/sem-codigo.out"; exit 1; fi
+  echo "ok: sem o código pediu as duas etapas e nenhum quadro chegou"
+  PROBE_EXTRA=(--2fa "$(codigo_totp)")
+fi
 INICIO=$(date +%s.%N)
 lado cli timeout 120 "$B" probe "$ALVO" --password "$PW" --frames "${QUADROS:-30}" --save "$T/primeiro-quadro.png" "${PROBE_EXTRA[@]}" > "$T/probe.out" 2> "$T/probe.err"
 R=$?
@@ -102,6 +138,17 @@ if [ "$MODO" = niri ]; then
     echo "OK: tela do niri capturada por wlr; clique e texto chegaram à janela"; exit 0
   fi
   echo "FALHOU: niri"; tail -5 "$T/serve.err"; exit 1
+fi
+if [ "$MODO" = fixa ]; then
+  if [ $R -eq 0 ] && grep -q '"authorized":true' "$T/serve.out" && grep -q '"secured":true' "$T/probe.out"; then
+    echo "OK: a senha fixa entrou sem ninguém aprovar (acesso sem supervisão), cifrada de ponta a ponta"; exit 0; fi
+  echo "FALHOU: acesso sem supervisão"; tail -5 "$T/serve.err"; exit 1
+fi
+if [ "$MODO" = gravar ]; then
+  sleep 2
+  ARQ=$(find "$T/srv/Vídeos/Kalango Remote" -type f -size +1k 2>/dev/null | head -1)
+  if [ $R -eq 0 ] && [ -n "$ARQ" ]; then echo "OK: a sessão recebida foi gravada em $ARQ ($(stat -c %s "$ARQ") bytes)"; exit 0; fi
+  echo "FALHOU: nenhum vídeo gravado"; ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1
 fi
 if [ "$MODO" = impostor ]; then
   if [ $R -ne 0 ] && grep -q "does not match the invite" "$T/probe.out" && ! grep -q '"first_frame"' "$T/probe.out"; then

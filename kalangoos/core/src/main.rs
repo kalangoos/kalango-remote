@@ -1,15 +1,17 @@
 //! kalango-remote-core · the process that runs RustDesk's core for the Kalango Remote app.
 //!
-//!   kalango-remote-core serve [--lan] [--no-tunnel] [--ask] [--port P]
+//!   kalango-remote-core serve [--lan] [--no-tunnel] [--ask] [--port P] [--setup-stdin]
 //!       Share this computer. Without --no-tunnel, opens a Cloudflare quick tunnel to a
 //!       loopback-only listener; --lan listens on every address instead (same network) and answers
 //!       the share code over UDP. --ask: a right password still needs the approval of whoever is
 //!       here. Events (JSON packets on stdout): listening, tunnel, tunnel_error, connection,
 //!       removed, chat. Commands (JSON packets on stdin): authorize, close, chat, new_password.
-//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files]
+//!       --setup-stdin: the first packet on stdin is a `kalango_remote_proto::setup::Setup` (fixed password for
+//!       unattended access, one-time password length, two-step secret, recording folder, own server).
+//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files] [--record-dir DIR]
 //!       Control another computer. Events and frames on stdout; commands (mouse, key, text, chat,
 //!       quality, close) on stdin. Ends when stdin closes.
-//!   kalango-remote-core probe <link|code|host:port> --password PW [--frames N] [--save F.png]
+//!   kalango-remote-core probe <link|code|host:port> --password PW [--frames N] [--save F.png] [--2fa CODE]
 //!       A session without a window, for tests: prints the events, counts frames, exits 0 after N.
 //!
 //! Packets are `kalango_remote_proto::wire`.
@@ -25,8 +27,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hbb_common::{config::Config, log, password_security};
+use hbb_common::{
+    config::{Config, LocalConfig},
+    log, password_security,
+};
 use kalango_remote_proto::{
+    setup::Setup,
+    totp,
     wire::{self, Packet},
     Invite, Target,
 };
@@ -130,6 +137,29 @@ fn commands() -> impl Iterator<Item = Value> {
 // ---------------------------------------------------------------------------------------------
 // sharing
 
+/// The first packet on stdin: what the app wants of this share (an empty one when it sends none).
+fn read_setup() -> Setup {
+    commands().next().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+fn apply_setup(setup: &Setup, ask: bool) {
+    for (key, value) in setup.options(ask) {
+        Config::set_option(key.into(), value);
+    }
+    Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or(""));
+    kalango::set_two_factor(setup.two_factor.as_deref().and_then(totp::from_base32));
+    if let Some(dir) = &setup.record_dir {
+        set_video_dir(dir);
+    }
+}
+
+fn set_video_dir(dir: &str) {
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        log::warn!("recording folder {dir}: {e}");
+    }
+    LocalConfig::set_option("video-save-directory".into(), dir.to_owned());
+}
+
 fn serve(args: &[String]) -> i32 {
     let out: Out = Arc::new(Mutex::new(protocol_out()));
     let lan = args.iter().any(|a| a == "--lan");
@@ -141,10 +171,10 @@ fn serve(args: &[String]) -> i32 {
         return 4;
     }
 
-    // one-time password: RustDesk's temporary password, renewed after each session
-    Config::set_option("verification-method".into(), "use-temporary-password".into());
-    Config::set_option("approve-mode".into(), "password".into());
-    Config::set_option(kalango::OPTION_APPROVE_AFTER_PASSWORD.into(), if ask { "Y" } else { "" }.into());
+    // how this computer may be entered: the one-time password (renewed after each session) and, for
+    // unattended access, a fixed one; two-step verification and recording of every session
+    let setup = if args.iter().any(|a| a == "--setup-stdin") { read_setup() } else { Setup::default() };
+    apply_setup(&setup, ask);
     if password_security::temporary_password().is_empty() {
         password_security::update_temporary_password();
     }
@@ -322,6 +352,9 @@ fn client(args: &[String], probe: bool) -> i32 {
         return 2;
     };
     let password = arg_value(args, "--password").unwrap_or_default();
+    if let Some(dir) = arg_value(args, "--record-dir") {
+        set_video_dir(&dir);
+    }
     let kind = if args.iter().any(|a| a == "--files") {
         session::Kind::Files
     } else if args.iter().any(|a| a == "--view-only") {
@@ -381,6 +414,7 @@ fn client(args: &[String], probe: bool) -> i32 {
             "lock_screen" => s.lock_screen(),
             "fps" => s.set_custom_fps(i("value")),
             "record" => s.record_screen(b("on")),
+            "2fa" => s.send2fa(st("code"), b("trust")),
             "read_dir" => session::read_remote_dir(&s, &st("path")),
             "transfer" => {
                 let id = session::transfer(&s, &st("path"), &st("to"), b("from_remote"));
@@ -434,6 +468,11 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
             let _ = writeln!(out.lock().unwrap(), "{v}");
             if matches!(ev, session::Event::Message { ref msgtype, .. } if msgtype.contains("error")) {
                 return 1;
+            }
+            if let (session::Event::Message { msgtype, .. }, Some(code)) = (&ev, arg_value(args, "--2fa")) {
+                if msgtype == "input-2fa" {
+                    s.send2fa(code, false);
+                }
             }
         }
         if let Some(f) = s.ui_handler.frames.take(Duration::from_millis(200)) {

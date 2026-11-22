@@ -50,6 +50,23 @@ pub(crate) fn approve_after_password() -> bool {
     Config::get_option(OPTION_APPROVE_AFTER_PASSWORD) == "Y"
 }
 
+/// Two-step verification of everyone who connects: `Some(secret)` asks for the authenticator code (RFC 6238),
+/// `None` stops asking. RustDesk's server already checks it when this option is set.
+pub fn set_two_factor(secret: Option<Vec<u8>>) {
+    let value = secret
+        .and_then(|secret| {
+            let info = crate::auth_2fa::TOTPInfo {
+                name: Config::get_id(),
+                secret,
+                digits: 6,
+                created_at: hbb_common::get_time(),
+            };
+            info.into_string().ok()
+        })
+        .unwrap_or_default();
+    Config::set_option("2fa".to_owned(), value);
+}
+
 /// This computer's identity as an invite carries it: (RustDesk id, ed25519 public signing key).
 /// Creates the key pair on first use.
 pub fn identity() -> (String, Vec<u8>) {

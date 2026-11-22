@@ -3107,17 +3107,26 @@ impl Connection {
                 }
                 self.try_start_cm(lr.my_id, lr.my_name, false);
             } else {
+                if let Some(secs) = crate::kalango::lockout::locked() {
+                    self.send_login_error(&format!("Too many wrong attempts; try again in {secs} s"))
+                        .await;
+                    return true;
+                }
                 let (failure, res) = self.check_failure(0).await;
                 if !res {
                     return true;
                 }
                 if !self.validate_password(allow_logon_screen_password) {
+                    crate::kalango::lockout::fail();
                     self.update_failure_with_scope(failure, false, 0, FailureScope::Default);
                     self.check_update_temporary_password(false);
                     self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
                         .await;
                     self.try_start_cm(lr.my_id, lr.my_name, false);
                 } else {
+                    if self.require_2fa.is_none() {
+                        crate::kalango::lockout::success();
+                    }
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
                     // Kalango Remote ("ask before each access"): the right password only lets the
                     // request reach the person at this computer, who still approves it (or not) in
@@ -3143,13 +3152,21 @@ impl Connection {
             if !self.awaiting_2fa {
                 return true;
             }
+            if let Some(secs) = crate::kalango::lockout::locked() {
+                self.send_login_error(&format!("Too many wrong attempts; try again in {secs} s"))
+                    .await;
+                return true;
+            }
             let (failure, res) = self.check_failure(1).await;
             if !res {
                 return true;
             }
             if let Some(totp) = self.require_2fa.as_ref() {
                 if let Ok(res) = totp.check_current(&tfa.code) {
+                    // a code that was already used is not accepted again within its window
+                    let res = res && crate::kalango::lockout::use_code(&tfa.code);
                     if res {
+                        crate::kalango::lockout::success();
                         self.update_failure(failure, true, 1);
                         self.require_2fa.take();
                         self.set_conn_audit_two_factor(ConnAuditTwoFactor::Totp);
@@ -3166,6 +3183,7 @@ impl Connection {
                             self.authorized,
                         );
                     } else {
+                        crate::kalango::lockout::fail();
                         self.update_failure(failure, false, 1);
                         self.send_login_error(crate::client::LOGIN_MSG_2FA_WRONG)
                             .await;

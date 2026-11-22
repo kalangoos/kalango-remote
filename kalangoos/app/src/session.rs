@@ -145,8 +145,8 @@ impl Session {
         if matches!(kalango_remote_proto::Target::parse(&self.target), Ok(kalango_remote_proto::Target::Id(_))) {
             // a RustDesk id is reached through the own server of Settings › Network
             let s = self.main.upgrade().map(|w| w.settings.borrow().clone()).unwrap_or_default();
-            if s.server_id.trim().is_empty() {
-                (self.on_event)(ConnectEvent::Failed(tr("Set your own server in Settings › Network to connect by id.").to_owned()));
+            if s.server_id.trim().is_empty() || s.server_key.trim().is_empty() {
+                (self.on_event)(ConnectEvent::Failed(tr("Set your own server (address and public key) in Settings › Network to connect by id.").to_owned()));
                 return;
             }
             args.extend(["--server".into(), s.server_id.trim().to_owned(), "--relay".into(), s.server_relay.trim().to_owned(), "--key".into(), s.server_key.trim().to_owned()]);

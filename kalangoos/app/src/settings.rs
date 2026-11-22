@@ -204,6 +204,11 @@ impl SettingsPage {
         let id_srv = field(tr("ID server  ·  e.g. remote.mycompany.com"), &s.server_id);
         let relay = field(tr("Relay server (optional)"), &s.server_relay);
         let key = field(tr("Server public key"), &s.server_key);
+        let key_warn = ui::label(tr("Without the server's public key its identity is not verified: sharing and connecting through it are refused."), "kr-error-text");
+        key_warn.set_wrap(true);
+        key_warn.set_xalign(0.0);
+        key_warn.set_visible(false);
+        fields.append(&key_warn);
         fields.append(&ui::para(tr("Sharing then shows this computer's id instead of a link; connect to others by their id. Restart the share after changing it."), "kr-note"));
         c3.append(&fields);
         net.append(&c1);
@@ -211,7 +216,9 @@ impl SettingsPage {
         net.append(&c3);
         let choose = {
             let (c1, c2, c3, fields) = (c1.clone(), c2.clone(), c3.clone(), fields.clone());
+            let (kw, ke) = (key_warn.clone(), key.clone());
             move |n: &str| {
+                kw.set_visible(n == "server" && ke.text().trim().is_empty());
                 for (c, id) in [(&c1, "cloudflare"), (&c2, "lan"), (&c3, "server")] {
                     if id == n {
                         c.add_css_class("selected");
@@ -241,8 +248,12 @@ impl SettingsPage {
         }
         for (e, f) in [(&id_srv, 0), (&relay, 1), (&key, 2)] {
             let w2 = w.clone();
+            let kw = key_warn.clone();
             e.connect_changed(move |e| {
                 let t = e.text().to_string();
+                if f == 2 {
+                    kw.set_visible(w2.upgrade().is_some_and(|w| w.settings.borrow().network == "server") && t.trim().is_empty());
+                }
                 set(&w2, |s| match f {
                     0 => s.server_id = t.clone(),
                     1 => s.server_relay = t.clone(),
@@ -473,6 +484,7 @@ fn fixed_password_dialog(anchor: &gtk::Button, w: &Weak<Window>, sub: &gtk::Labe
                 Ok(()) => {
                     sub.set_text(tr("Come in without anyone approving, with a fixed password. For your own computers."));
                     if let Some(w) = w.upgrade() {
+                        w.settings_changed();
                         w.toast(tr("Fixed password saved in the keyring"));
                     }
                     p.popdown();

@@ -80,6 +80,7 @@ pub struct Home {
     retry_at: Rc<Cell<u64>>,
     info: RefCell<ShareInfo>,
     core: RefCell<Option<Core>>,
+    sent_setup: RefCell<Option<(kalango_remote_proto::setup::Setup, bool)>>,
     incoming: RefCell<Option<Rc<Incoming>>>,
     // connect
     target: gtk::Entry,
@@ -520,6 +521,7 @@ impl Home {
             retry_at: Rc::new(Cell::new(0)),
             info: RefCell::new(ShareInfo::default()),
             core: RefCell::new(None),
+            sent_setup: RefCell::new(None),
             incoming: RefCell::new(None),
             target,
             target_box,
@@ -674,6 +676,31 @@ impl Home {
         } else {
             tr("Off · fixed password and allowed devices in Settings")
         });
+        self.push_setup();
+    }
+
+    /// While sharing, what was turned off (or on) takes effect now: the core gets the new setup, and when
+    /// unattended access went off the sessions that came in with the fixed password end.
+    pub fn push_setup(&self) {
+        let Some(w) = self.win() else { return };
+        if self.core.borrow().is_none() {
+            return;
+        }
+        let s = w.settings.borrow().clone();
+        let setup = crate::access::current_setup(&s);
+        if self.sent_setup.borrow().as_ref() == Some(&(setup.clone(), s.ask_before)) {
+            return;
+        }
+        let mut packet = serde_json::to_value(&setup).unwrap_or_default();
+        packet["cmd"] = "setup".into();
+        packet["ask"] = s.ask_before.into();
+        self.send_to_core(&packet);
+        *self.sent_setup.borrow_mut() = Some((setup.clone(), s.ask_before));
+        if setup.fixed_password.is_none() {
+            if let Some(i) = self.incoming.borrow().clone() {
+                i.end_unattended();
+            }
+        }
     }
 
     // -------------------------------------------------------------------------------------- layout
@@ -787,7 +814,7 @@ impl Home {
         let mut args = vec!["serve".to_string()];
         if lan {
             args.extend(["--no-tunnel".into(), "--lan".into()]);
-        } else if s.network == "server" && !s.server_id.trim().is_empty() {
+        } else if s.network == "server" {
             // through the own server: no tunnel; the core registers there and the id is the code
             args.push("--no-tunnel".into());
         }
@@ -811,6 +838,7 @@ impl Home {
                 let mut packet = serde_json::to_value(&setup).unwrap_or_default();
                 packet["cmd"] = "setup".into();
                 c.send(&packet);
+                *self.sent_setup.borrow_mut() = Some((setup.clone(), s.ask_before));
                 *self.core.borrow_mut() = Some(c);
                 self.share.opening_step.set_text(if lan {
                     tr("starting the direct connection on this network")

@@ -15,6 +15,7 @@
 
 pub mod cm;
 pub mod direct;
+pub mod lockout;
 pub mod session;
 pub mod wlr_input;
 
@@ -52,19 +53,25 @@ pub(crate) fn approve_after_password() -> bool {
 
 /// Two-step verification of everyone who connects: `Some(secret)` asks for the authenticator code (RFC 6238),
 /// `None` stops asking. RustDesk's server already checks it when this option is set.
-pub fn set_two_factor(secret: Option<Vec<u8>>) {
-    let value = secret
-        .and_then(|secret| {
-            let info = crate::auth_2fa::TOTPInfo {
-                name: Config::get_id(),
-                secret,
-                digits: 6,
-                created_at: hbb_common::get_time(),
-            };
-            info.into_string().ok()
-        })
-        .unwrap_or_default();
+pub fn set_two_factor(secret: Option<Vec<u8>>) -> Result<(), String> {
+    let value = match secret {
+        None => String::new(),
+        Some(secret) => crate::auth_2fa::TOTPInfo {
+            name: Config::get_id(),
+            secret,
+            digits: 6,
+            created_at: hbb_common::get_time(),
+        }
+        .into_string()
+        .map_err(|e| e.to_string())?,
+    };
+    let wanted = !value.is_empty();
     Config::set_option("2fa".to_owned(), value);
+    // never run without the code prompt that was asked for
+    if wanted && crate::auth_2fa::get_2fa(None).is_none() {
+        return Err("two-step verification could not be turned on (the secret was not accepted)".into());
+    }
+    Ok(())
 }
 
 /// This computer's identity as an invite carries it: (RustDesk id, ed25519 public signing key).

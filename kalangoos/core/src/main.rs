@@ -137,27 +137,48 @@ fn commands() -> impl Iterator<Item = Value> {
 // ---------------------------------------------------------------------------------------------
 // sharing
 
-/// The first packet on stdin: what the app wants of this share (an empty one when it sends none).
-fn read_setup() -> Setup {
-    commands().next().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+/// The first packet on stdin: what the app wants of this share. A packet that does not parse is an error,
+/// never "no protections".
+fn read_setup() -> Result<Setup, String> {
+    let v = commands().next().ok_or("no setup packet on stdin")?;
+    serde_json::from_value(v).map_err(|e| format!("setup packet not understood: {e}"))
 }
 
-fn apply_setup(setup: &Setup, ask: bool) {
+static RECORDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Applies a setup (at start, and again whenever the app sends `setup` while sharing): options, the fixed
+/// password (cleared when unattended access is off), two-step verification and the recording folder.
+fn apply_setup(setup: &Setup, ask: bool) -> Result<(), String> {
+    setup.validate()?;
     for (key, value) in setup.options(ask) {
         Config::set_option(key.into(), value);
     }
-    Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or(""));
-    kalango::set_two_factor(setup.two_factor.as_deref().and_then(totp::from_base32));
-    if let Some(dir) = &setup.record_dir {
-        set_video_dir(dir);
+    if !Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or("")) {
+        return Err("the fixed password could not be stored".into());
     }
+    kalango::set_two_factor(setup.two_factor.as_deref().and_then(totp::from_base32))?;
+    RECORDING.store(setup.record_dir.is_some(), std::sync::atomic::Ordering::Relaxed);
+    if let Some(dir) = &setup.record_dir {
+        set_video_dir(dir)?;
+    }
+    Ok(())
 }
 
-fn set_video_dir(dir: &str) {
-    if let Err(e) = std::fs::create_dir_all(dir) {
-        log::warn!("recording folder {dir}: {e}");
-    }
+/// The recordings folder is private (0700) and so is every file the core makes in it (umask 077).
+fn set_video_dir(dir: &str) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(|e| format!("recording folder {dir}: {e}"))?;
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    unsafe { libc::umask(0o077) };
     LocalConfig::set_option("video-save-directory".into(), dir.to_owned());
+    Ok(())
+}
+
+/// Tells the person on the other side that this session is being recorded (a chat message).
+fn notify_recording(id: i32) {
+    if RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
+        cm::send_chat(id, "This session is being recorded on the shared computer.".to_owned());
+    }
 }
 
 fn serve(args: &[String]) -> i32 {
@@ -173,8 +194,23 @@ fn serve(args: &[String]) -> i32 {
 
     // how this computer may be entered: the one-time password (renewed after each session) and, for
     // unattended access, a fixed one; two-step verification and recording of every session
-    let setup = if args.iter().any(|a| a == "--setup-stdin") { read_setup() } else { Setup::default() };
-    apply_setup(&setup, ask);
+    let setup = if args.iter().any(|a| a == "--setup-stdin") {
+        match read_setup() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{e}");
+                emit(&out, json!({"event": "error", "kind": "setup", "text": e}));
+                return 5;
+            }
+        }
+    } else {
+        Setup::default()
+    };
+    if let Err(e) = apply_setup(&setup, ask) {
+        eprintln!("{e}");
+        emit(&out, json!({"event": "error", "kind": "setup", "text": e}));
+        return 5;
+    }
     if password_security::temporary_password().is_empty() {
         password_security::update_temporary_password();
     }
@@ -273,6 +309,15 @@ fn serve(args: &[String]) -> i32 {
         for c in commands() {
             let id = c["id"].as_i64().unwrap_or(0) as i32;
             match c["cmd"].as_str().unwrap_or("") {
+                "setup" => match serde_json::from_value::<Setup>(c.clone()).map_err(|e| e.to_string()).and_then(|s| apply_setup(&s, c["ask"].as_bool().unwrap_or(ask)).map(|_| s)) {
+                    Ok(_) => emit(&o, json!({"event": "setup_applied"})),
+                    // a setup that cannot be applied must not leave the old one half-working: stop sharing
+                    Err(e) => {
+                        eprintln!("{e}");
+                        emit(&o, json!({"event": "error", "kind": "setup", "text": e}));
+                        std::process::exit(5);
+                    }
+                },
                 "authorize" => {
                     for perm in ["keyboard", "clipboard", "audio", "file"] {
                         if let Some(v) = c[perm].as_bool() {
@@ -280,6 +325,7 @@ fn serve(args: &[String]) -> i32 {
                         }
                     }
                     cm::authorize(id);
+                    notify_recording(id);
                 }
                 "close" => cm::close(id),
                 "chat" => cm::send_chat(id, c["text"].as_str().unwrap_or("").to_owned()),
@@ -295,8 +341,25 @@ fn serve(args: &[String]) -> i32 {
         std::process::exit(0);
     });
 
+    // the lockout of the whole share (wrong passwords or codes) is told to the app
+    let o = out.clone();
+    std::thread::spawn(move || {
+        let mut last = None;
+        loop {
+            let now = kalango::lockout::locked();
+            if now.is_some() != last.is_some() || now.is_some_and(|n| last.is_none_or(|l: u64| n > l)) {
+                emit(&o, json!({"event": "lockout", "secs": now.unwrap_or(0)}));
+            }
+            last = now;
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+
     for ev in cm_rx {
         if let Ok(v) = serde_json::to_value(&ev) {
+            if v["event"] == "connection" && v["authorized"] == true {
+                notify_recording(v["id"].as_i64().unwrap_or(0) as i32);
+            }
             emit(&out, v);
         }
         // a finished session renews the one-time password
@@ -358,7 +421,9 @@ fn client(args: &[String], probe: bool) -> i32 {
     };
     let password = arg_value(args, "--password").unwrap_or_default();
     if let Some(dir) = arg_value(args, "--record-dir") {
-        set_video_dir(&dir);
+        if let Err(e) = set_video_dir(&dir) {
+            log::warn!("{e}");
+        }
     }
     // the own server only for a session that asks for it; the others never talk to a rendezvous server
     let server = arg_value(args, "--server").unwrap_or_default();

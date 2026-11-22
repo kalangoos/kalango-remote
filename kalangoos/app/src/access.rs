@@ -30,7 +30,10 @@ pub fn setup_for(s: &Settings, fixed_password: Option<String>, two_factor: Optio
         otp_length: if s.otp_length == 8 { 8 } else { 6 },
         two_factor: if s.two_factor { two_factor.filter(|t| !t.is_empty()) } else { None },
         record_dir: s.record.then(|| videos.to_string_lossy().into_owned()),
-        server: (s.network == "server" && !s.server_id.trim().is_empty()).then(|| Server {
+        clipboard: s.clipboard,
+        audio: s.audio,
+        // with "own server" chosen it is always asked for; empty fields make the core refuse (never the tunnel instead)
+        server: (s.network == "server").then(|| Server {
             id: s.server_id.trim().to_owned(),
             relay: s.server_relay.trim().to_owned(),
             key: s.server_key.trim().to_owned(),
@@ -110,7 +113,9 @@ mod tests {
         assert_eq!(on.record_dir.as_deref(), Some("/v/Kalango Remote"));
         assert_eq!(on.server.unwrap().id, "remote.example.com");
         s.server_id.clear();
-        assert!(setup_for(&s, None, None, v).server.is_none());
+        s.server_key.clear();
+        let empty = setup_for(&s, None, None, v);
+        assert!(empty.validate().is_err(), "an own server without its address and key is refused, not skipped");
     }
 
     #[test]

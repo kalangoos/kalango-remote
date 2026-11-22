@@ -15,8 +15,8 @@ cat > "$T/plano.json" <<'JSON'
  "limits":"só a janela Configurações"}
 JSON
 export DISPLAY=$DISP GDK_BACKEND=x11 KALANGO_REMOTE_DEMO=$T/perfil LANGUAGE=pt_BR
-# o painel (plano de 3 passos): 560 de largura encostado à direita da janela de 1500 px; os botões ficam em y=462
-BOTOES=(${BOTOES_TESTE:-"aprovar:1377:462:0" "cancelar:979:462:1" "ajustar:1085:462:3"})
+# o painel (plano de 3 passos): 560 de largura encostado à direita da janela de 1500 px; os botões ficam em y=482
+BOTOES=(${BOTOES_TESTE:-"aprovar:1377:482:0" "cancelar:979:482:1" "ajustar:1085:482:3"})
 FALHAS=0
 for b in "${BOTOES[@]}"; do
   IFS=: read -r nome x y esperado <<< "$b"
@@ -38,6 +38,24 @@ for b in "${BOTOES[@]}"; do
   else
     echo "FALHOU: $nome → saída $R, esperado $esperado: $(cat "$T/saida.txt")"; FALHAS=1
   fi
+done
+# fechar sem decidir: o app morre (ou a janela some) com o plano pendente; o comando nunca pode sair 0 nem dizer "approved"
+for como in kill fechar; do
+  kalangoos/scripts/rodar-app.sh --demo > "$T/app.log" 2>&1 &
+  AP=$!
+  sleep 6
+  WID=$(xdotool search --onlyvisible --name "Kalango Remote" | head -1)
+  xdotool windowmove "$WID" 0 0 windowsize "$WID" 1500 1000
+  sleep 1
+  kalangoos/scripts/rodar-app.sh --demo agent-plan "$T/plano.json" > "$T/saida.txt" 2>&1 &
+  CP=$!
+  sleep 3
+  if [ "$como" = kill ]; then kill $AP; pkill -P $AP; else xdotool windowclose "$WID"; fi
+  for _ in $(seq 10); do kill -0 $CP 2>/dev/null || break; sleep 1; done
+  if kill -0 $CP 2>/dev/null; then kill $CP; R=1; echo "(o comando continuou esperando depois de $como; encerrado à força)"; else wait $CP; R=$?; fi
+  kill $AP 2>/dev/null; pkill -P $AP 2>/dev/null
+  if [ "$R" -ne 0 ] && ! grep -q approved "$T/saida.txt"; then echo "ok: $como com o plano pendente → saída $R, nada aprovado"
+  else echo "FALHOU: $como com o plano pendente → saída $R: $(cat "$T/saida.txt")"; FALHAS=1; fi
 done
 echo "registros em $T"
 exit $FALHAS

@@ -269,6 +269,7 @@ impl Window {
         }
         let me = Rc::downgrade(self);
         let p = plan.clone();
+        let cmd_pending = cmd.clone();
         let panel = PlanPanel::new(&plan, move |d| {
             let mut connecting = false;
             if let Some(w) = me.upgrade() {
@@ -280,6 +281,8 @@ impl Window {
             cmd.print_literal(&format!("{}\n", p.answer(d, connecting)));
             cmd.set_exit_status(d.exit_status());
         });
+        // until a person decides the command fails: closing the window or a crash must never read as "approved"
+        cmd_pending.set_exit_status(1);
         self.overlay.add_overlay(&panel.root);
         let root = panel.root.clone();
         ui::on_width(&self.overlay, move |width| {
@@ -380,7 +383,7 @@ pub fn agent_plan(app: &gtk::Application, cmd: &gio::ApplicationCommandLine, sou
             let w = Window::get_or_create(app);
             w.present();
             w.show_plan(plan, cmd.clone());
-            0
+            1 // pending: only a real decision changes it (see show_plan)
         }
         Err(e) => fail(e),
     }

@@ -23,6 +23,7 @@ struct Request {
 
 struct Active {
     name: String,
+    unattended: bool,
     keyboard: bool,
     started: Instant,
     outline: Option<gtk::Window>,
@@ -93,7 +94,9 @@ impl Incoming {
                     if !self.active.borrow().contains_key(&id) {
                         // allowed without our dialog (a fixed password): the permission now
                         self.grant(v["keyboard"].as_bool().unwrap_or(true));
-                        self.start_indicator(id, v);
+                        let mut u = v.clone();
+                        u["unattended"] = true.into();
+                        self.start_indicator(id, &u);
                     }
                 } else if !self.requests.borrow().contains_key(&id) {
                     // a device in the allowed list (still in time) goes straight in
@@ -142,6 +145,14 @@ impl Incoming {
     /// Ends every session going on (Esc Esc anywhere: the compositor runs `kalango-remote end-sessions`).
     pub fn end_sessions(&self) {
         let ids: Vec<i32> = self.active.borrow().keys().copied().collect();
+        for id in ids {
+            self.send(json!({"cmd": "close", "id": id}));
+        }
+    }
+
+    /// Ends the sessions that came in with the fixed password (unattended access was turned off).
+    pub fn end_unattended(&self) {
+        let ids: Vec<i32> = self.active.borrow().iter().filter(|(_, a)| a.unattended).map(|(id, _)| *id).collect();
         for id in ids {
             self.send(json!({"cmd": "close", "id": id}));
         }
@@ -335,6 +346,22 @@ impl Incoming {
         row.append(&dot);
         let what = if keyboard { trf("{who} is controlling this computer", &[("who", name.clone())]) } else { trf("{who} is viewing this computer", &[("who", name.clone())]) };
         row.append(&ui::label(&what, "kr-row-title"));
+        let unattended = v["unattended"].as_bool().unwrap_or(false);
+        let st = Window::get().map(|w| w.settings.borrow().clone()).unwrap_or_default();
+        if unattended {
+            // what the fixed password lets in, so nobody is surprised by what it can do
+            let mut allowed = vec![tr("screen").to_owned(), tr("keyboard and mouse").to_owned()];
+            if st.clipboard {
+                allowed.push(tr("clipboard").to_owned());
+            }
+            if st.audio {
+                allowed.push(tr("audio").to_owned());
+            }
+            row.append(&ui::badge(&trf("unattended · {allowed}; no files, terminal or tunnels", &[("allowed", allowed.join(", "))]), "gold").0);
+        }
+        if st.record {
+            row.append(&ui::badge(tr("recording"), "coral").0);
+        }
         let label = ui::label("", "kr-caption");
         row.append(&label);
         row.append(&ui::hbox(0, "kr-vdiv").tap_size(1, 18));
@@ -401,7 +428,7 @@ impl Incoming {
             }
             glib::ControlFlow::Continue
         });
-        self.active.borrow_mut().insert(id, Active { name, keyboard, started, outline, banner, label });
+        self.active.borrow_mut().insert(id, Active { name, unattended, keyboard, started, outline, banner, label });
     }
 
     fn reply_chat(self: &Rc<Incoming>, id: i32, who: &str) {

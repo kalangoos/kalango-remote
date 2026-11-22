@@ -47,6 +47,13 @@ impl PlanPanel {
         }
         root.append(&ui::para(tr("I will do it like this. Nothing happens there without your approval and theirs:"), "kr-plan-intro"));
 
+        // what is being approved: where it connects (a link, a code or an address; never hidden)
+        let target = if plan.target.is_empty() { plan.device.clone() } else { plan.target.clone() };
+        let to = ui::ellip(&trf("Connects to: {target}", &[("target", target.clone())]), "kr-row-sub");
+        to.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        to.set_tooltip_text(Some(&target));
+        root.append(&to);
+
         let steps = ui::vbox(8, "");
         for (i, s) in plan.steps.iter().enumerate() {
             let row = ui::hbox(10, "kr-plan-step");

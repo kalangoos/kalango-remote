@@ -122,6 +122,15 @@ PY
   if [ -f "$T/remoto1.png" ]; then
     [ "$(mean_dark "$T/remoto1.png")" \< 0.5 ] && ok "quem controla vê a área de trabalho (escuridão $(mean_dark "$T/remoto1.png"))" || falha "quem controla viu preto (escuridão $(mean_dark "$T/remoto1.png"))"
   else falha "o probe não salvou o quadro"; fi
+  # o app morre à força (kill -9): o núcleo morre junto (PR_SET_PDEATHSIG) e a tela local volta, sem ninguém preso
+  CP=$(pgrep -P "$APID" -f kalango-remote-core | head -1)
+  if [ -n "$CP" ]; then
+    kill -9 "$APID"; wait "$APID" 2>/dev/null
+    for _ in $(seq 20); do kill -0 "$CP" 2>/dev/null || break; sleep 0.25; done
+    kill -0 "$CP" 2>/dev/null && falha "o núcleo sobreviveu à morte do app" || ok "o app morreu à força e o núcleo morreu junto"
+    sleep 2; local_px 640 500 > /dev/null
+    [ "$(mean_dark "$T/local.png")" \< 0.5 ] && ok "a tela local voltou sem o app" || falha "a tela continuou coberta sem o app"
+  else falha "não achei o núcleo filho do app"; fi
   # parar pelo botão do aviso: a conexão cai e a cobertura sai
   NIRI_SOCKET=$NS "$N" msg -j layers > /dev/null
   kill $PRB 2>/dev/null; wait $PRB 2>/dev/null

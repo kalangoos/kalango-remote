@@ -47,15 +47,34 @@ pub struct Core {
     child: Arc<Mutex<Option<Child>>>,
 }
 
+/// The child dies with the app (SIGKILL when the thread that started it ends, i.e. when the app dies): a core that
+/// outlived its app would keep the permission kalangod gave it (and, in privacy mode, nobody would be left to show
+/// the banner with the Stop button). Started from the main thread, which lives as long as the app.
+pub fn die_with_parent(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: only async-signal-safe calls (prctl, getppid) between fork and exec.
+    unsafe {
+        let parent = libc::getpid();
+        cmd.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // (the parent may have died between the fork and here)
+            if libc::getppid() != parent {
+                return Err(std::io::Error::other("the parent died"));
+            }
+            Ok(())
+        });
+    }
+}
+
 impl Core {
     /// Starts `kalango-remote-core ARGS`; `on_msg` runs on the main loop for every packet.
     pub fn spawn(args: &[String], on_msg: impl Fn(Msg) + 'static) -> std::io::Result<Core> {
-        let mut child = Command::new(core_path())
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut cmd = Command::new(core_path());
+        cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        die_with_parent(&mut cmd);
+        let mut child = cmd.spawn()?;
         let stdin = child.stdin.take();
         let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout"))?;
         // stderr still reaches ours line by line; the first line is kept for the error state
@@ -148,5 +167,31 @@ impl Core {
                 let _ = c.wait();
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_child_started_with_die_with_parent_dies_when_its_parent_thread_ends() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut cmd = Command::new("sleep");
+            cmd.arg("60");
+            die_with_parent(&mut cmd);
+            let child = cmd.spawn().unwrap();
+            tx.send(child.id()).unwrap();
+            // (the thread ends here: the child gets SIGKILL; the handle is not waited on)
+            std::mem::forget(child);
+        });
+        let pid = rx.recv().unwrap();
+        let gone = (0..40).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            // a killed child not yet waited for stays a zombie: "gone" is dead or zombie
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).map(|s| s.rsplit_once(')').is_some_and(|(_, r)| r.trim_start().starts_with('Z'))).unwrap_or(true)
+        });
+        assert!(gone, "the child outlived its parent thread");
     }
 }

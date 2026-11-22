@@ -7,8 +7,10 @@
 //!   wlr-remote-poc click X Y
 //!   wlr-remote-poc type TEXT       (lowercase ASCII letters, digits and space)
 //!   wlr-remote-poc bench N         (N captures, prints frames per second)
-//!   wlr-remote-poc layer NS R G B  (a 400×60 layer-shell surface in the overlay layer, top centre, named NS, a
-//!                                   solid colour: a stand-in for the banner, used by the privacy mode test)
+//!   wlr-remote-poc layer NS R G B [CHILD ARGS…]  (a 400×60 layer-shell surface in the overlay layer, top centre, named NS, a
+//!                                   solid colour: a stand-in for the banner, used by the privacy mode test; prints
+//!                                   BUTTON for each click it gets; with CHILD, starts that program as its child:
+//!                                   the app and its core)
 
 use std::{
     os::fd::{AsFd, OwnedFd},
@@ -16,7 +18,7 @@ use std::{
 };
 
 use wayland_client::{
-    protocol::{wl_buffer, wl_compositor, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface},
+    protocol::{wl_buffer, wl_compositor, wl_output, wl_pointer, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface},
     Connection, Dispatch, QueueHandle, WEnum,
 };
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
@@ -189,6 +191,20 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
     }
 }
 
+/// The `layer` test client prints "BUTTON" when its surface gets a pointer button, so a test can tell which layer a
+/// click reached.
+impl Dispatch<wl_seat::WlSeat, ()> for State {
+    fn event(_: &mut Self, _: &wl_seat::WlSeat, _: wl_seat::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<wl_pointer::WlPointer, ()> for State {
+    fn event(_: &mut Self, _: &wl_pointer::WlPointer, ev: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if let wl_pointer::Event::Button { state: WEnum::Value(wl_pointer::ButtonState::Pressed), .. } = ev {
+            println!("BUTTON");
+        }
+    }
+}
+
 thread_local! {
     static LAYER_SURFACE: std::cell::RefCell<Option<wl_surface::WlSurface>> = const { std::cell::RefCell::new(None) };
 }
@@ -202,7 +218,6 @@ macro_rules! ignore {
 }
 ignore!(
     wl_shm::WlShm,
-    wl_seat::WlSeat,
     wl_shm_pool::WlShmPool,
     wl_buffer::WlBuffer,
     ZwlrScreencopyManagerV1,
@@ -395,6 +410,15 @@ fn main() {
                 &qh,
                 (),
             );
+            // (the seat was bound before the layer surface existed: ask its capabilities again)
+            if let Some(seat) = st.seat.as_ref() {
+                let _ = seat.get_pointer(&qh, ());
+            }
+            if args.len() > 6 {
+                let child = std::process::Command::new(&args[6]).args(&args[7..]).spawn().expect("child");
+                println!("child {}", child.id());
+                std::mem::forget(child);
+            }
             ls.set_size(400, 60);
             ls.set_anchor(zwlr_layer_surface_v1::Anchor::Top);
             LAYER_SURFACE.with(|s| *s.borrow_mut() = Some(surface.clone()));

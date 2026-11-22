@@ -24,6 +24,9 @@ const MAX_DETAIL: usize = 160;
 const MAX_REQUEST: usize = 400;
 const MAX_LIMITS: usize = 300;
 pub const MAX_BYTES: usize = 64 * 1024;
+/// A plan nobody decided is cancelled after this long (9 minutes): the agent stops waiting at 10 and tells the person
+/// nothing was done, so a click after that must find no plan to approve.
+pub const DECIDE_WITHIN_SECS: u32 = 9 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

@@ -294,6 +294,17 @@ impl Window {
             root.set_size_request(if narrow { -1 } else { 560 }, -1);
             root.set_margin_start(if narrow { 14 } else { 0 });
         });
+        // nobody decided in time: the plan is cancelled here, before the agent gives up waiting (its limit is 10 minutes
+        // and it then tells the person nothing was done: a click that came later must not connect anyway)
+        let weak_panel = Rc::downgrade(&panel);
+        let me = Rc::downgrade(self);
+        glib::timeout_add_seconds_local_once(crate::plan::DECIDE_WITHIN_SECS, move || {
+            let (Some(w), Some(panel)) = (me.upgrade(), weak_panel.upgrade()) else { return };
+            let pending = w.plan.borrow().as_ref().is_some_and(|current| Rc::ptr_eq(current, &panel));
+            if pending {
+                panel.decide(Decision::Cancelled);
+            }
+        });
         *self.plan.borrow_mut() = Some(panel);
         self.show_page("home");
     }

@@ -582,6 +582,11 @@ impl Home {
             let h = Rc::downgrade(&home);
             home.share.unattended.connect_state_set(move |s, on| {
                 if let Some(w) = h.upgrade().and_then(|h| h.win.upgrade()) {
+                    if on && w.settings.borrow().unattended {
+                        // (the card following a setting that is already on, at start or after Settings: not a
+                        // click; sending it back to Settings here used to switch the setting off again)
+                        return glib::Propagation::Proceed;
+                    }
                     if on {
                         // turning it on happens in Settings (fixed password, allowed devices)
                         s.set_active(false);
@@ -677,6 +682,10 @@ impl Home {
             tr("Off · fixed password and allowed devices in Settings")
         });
         self.push_setup();
+        // (the privacy switch applies at once to a session going on)
+        if let Some(i) = self.incoming.borrow().clone() {
+            i.refresh_grant();
+        }
     }
 
     /// While sharing, what was turned off (or on) takes effect now: the core gets the new setup and, when the

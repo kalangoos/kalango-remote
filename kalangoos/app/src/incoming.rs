@@ -34,11 +34,15 @@ pub struct Incoming {
     home: Weak<Home>,
     requests: RefCell<HashMap<i32, Request>>,
     active: RefCell<HashMap<i32, Active>>,
+    /// the sessions nobody approved here (a fixed password or an allowed device): the privacy cover is for them only
+    unattended: RefCell<std::collections::HashSet<i32>>,
+    /// whether the last permission given to the core included the pointer and the keyboard
+    last_control: std::cell::Cell<bool>,
 }
 
 impl Incoming {
     pub fn new(home: &Rc<Home>) -> Rc<Incoming> {
-        Rc::new(Incoming { home: Rc::downgrade(home), requests: Default::default(), active: Default::default() })
+        Rc::new(Incoming { home: Rc::downgrade(home), requests: Default::default(), active: Default::default(), unattended: Default::default(), last_control: Default::default() })
     }
 
     fn send(&self, v: Value) {
@@ -59,13 +63,33 @@ impl Incoming {
     /// the keyboard) only to processes kalangod allows (niri patch 0008). Outside KalangoOS there is no kalangod
     /// and nothing to ask for.
     fn grant(&self, control: bool) {
+        self.last_control.set(control);
+        let privacy = self.wants_privacy();
         let Some(pid) = self.core_pid() else {
             eprintln!("kalango-remote: permissão de controle remoto: o núcleo não está rodando");
             return;
         };
-        match crate::kalangod::grant(pid, control) {
-            Ok(()) => eprintln!("kalango-remote: permissão de controle remoto dada ao núcleo {pid} (controle: {control})"),
+        match crate::kalangod::grant(pid, control, privacy) {
+            Ok(()) => eprintln!("kalango-remote: permissão de controle remoto dada ao núcleo {pid} (controle: {control}, privacidade: {privacy})"),
             Err(e) => eprintln!("kalango-remote: permissão de controle remoto: {e}"),
+        }
+    }
+
+    /// Privacy mode (the local monitors covered, the local person's input blocked behind the cover): the setting is on,
+    /// the compositor can do it, a session nobody approved here is going on, and no access request waits for an
+    /// answer (its dialog would sit under the cover, out of sight and reach).
+    fn wants_privacy(&self) -> bool {
+        Window::get().is_some_and(|w| w.settings.borrow().privacy_black)
+            && !self.unattended.borrow().is_empty()
+            && self.requests.borrow().is_empty()
+            && crate::kalangod::compositor_supports_privacy()
+    }
+
+    /// Gives the core's permission again with what changed (a switch, a request that came or went, a session that
+    /// started or ended): the cover comes and goes at once.
+    pub fn refresh_grant(&self) {
+        if !self.active.borrow().is_empty() {
+            self.grant(self.last_control.get());
         }
     }
 
@@ -113,8 +137,11 @@ impl Incoming {
                     r.dialog.destroy();
                 }
                 let ended = self.active.borrow_mut().remove(&id);
+                self.unattended.borrow_mut().remove(&id);
                 if self.active.borrow().is_empty() {
                     self.revoke();
+                } else {
+                    self.refresh_grant();
                 }
                 if let Some(a) = ended {
                     crate::shell_sound::play("kalango-remote-stop");
@@ -272,6 +299,8 @@ impl Incoming {
                 me.send(json!({"cmd": "close", "id": id}));
             }
             r.dialog.destroy();
+            // (a session going on under the cover gets it back)
+            me.refresh_grant();
         });
         let d = decide.clone();
         deny.connect_clicked(move |_| d(false));
@@ -318,6 +347,8 @@ impl Incoming {
         dialog.present();
         deny.grab_focus();
         self.requests.borrow_mut().insert(id, Request { dialog });
+        // the cover lifts while the dialog waits
+        self.refresh_grant();
     }
 
     fn start_indicator(self: &Rc<Incoming>, id: i32, v: &Value) {
@@ -418,6 +449,11 @@ impl Incoming {
             glib::ControlFlow::Continue
         });
         self.active.borrow_mut().insert(id, Active { name, keyboard, started, outline, banner, label });
+        if unattended {
+            self.unattended.borrow_mut().insert(id);
+        }
+        // (the permission now says whether this one is covered)
+        self.refresh_grant();
     }
 
     fn reply_chat(self: &Rc<Incoming>, id: i32, who: &str) {

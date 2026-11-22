@@ -22,12 +22,53 @@ pub fn rpc(method: &str, params: Value) -> Result<Value, String> {
     }
 }
 
-/// Lets the core (`pid`, our child) capture the screen and, with `control`, use the pointer and keyboard.
-pub fn grant(pid: u32, control: bool) -> Result<(), String> {
-    let caps: Vec<&str> = if control { vec!["captura", "ponteiro", "teclado"] } else { vec!["captura"] };
+/// Lets the core (`pid`, our child) capture the screen and, with `control`, use the pointer and keyboard; with
+/// `privacy`, the compositor also covers the local monitors in black (and blocks the local person's input to what is
+/// behind the cover) while the screen captures keep showing the real desktop (niri patch 0012).
+pub fn grant(pid: u32, control: bool, privacy: bool) -> Result<(), String> {
+    let mut caps: Vec<&str> = if control { vec!["captura", "ponteiro", "teclado"] } else { vec!["captura"] };
+    if privacy {
+        caps.push("privacidade");
+    }
     rpc("kalango/controle_remoto", json!({"acao": "permitir", "pid": pid, "capacidades": caps})).map(|_| ())
 }
 
 pub fn revoke(pid: u32) -> Result<(), String> {
     rpc("kalango/controle_remoto", json!({"acao": "revogar", "pid": pid})).map(|_| ())
+}
+
+/// What the capabilities of a compositor's `kalango-features` answer say: it can cover the local monitors.
+pub fn features_have_privacy(json: &str) -> bool {
+    serde_json::from_str::<Vec<String>>(json).is_ok_and(|v| v.iter().any(|f| f == "privacy"))
+}
+
+/// Whether the running compositor can cover the local monitors during a remote session (KalangoOS's niri,
+/// `niri msg kalango-features`). Upstream niri, another compositor or no session at all: no, and the privacy
+/// switch stays off with its explanation. Asked once.
+pub fn compositor_supports_privacy() -> bool {
+    static ANSWER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ANSWER.get_or_init(|| {
+        let niri = std::env::var_os("KALANGO_REMOTE_NIRI").unwrap_or_else(|| "niri".into());
+        std::process::Command::new(niri)
+            .args(["msg", "--json", "kalango-features"])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .is_some_and(|o| features_have_privacy(&String::from_utf8_lossy(&o.stdout)))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_privacy_feature_counts() {
+        assert!(features_have_privacy(r#"["remote-control","privacy"]"#));
+        assert!(!features_have_privacy(r#"["remote-control"]"#));
+        assert!(!features_have_privacy(""));
+        assert!(!features_have_privacy("Error: unknown subcommand"));
+    }
 }

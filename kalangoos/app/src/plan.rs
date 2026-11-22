@@ -24,6 +24,20 @@ const MAX_DETAIL: usize = 160;
 const MAX_REQUEST: usize = 400;
 const MAX_LIMITS: usize = 300;
 pub const MAX_BYTES: usize = 64 * 1024;
+/// A plan nobody decided is cancelled by the panel itself this long (a minute) before the agent stops waiting, and after
+/// 9 minutes when the plan does not say when that is: the agent then tells the person nothing was done, so a click
+/// after that must find no plan to approve.
+pub const CANCEL_BEFORE_DEADLINE_SECS: u64 = 60;
+pub const DEFAULT_DECIDE_WITHIN_SECS: u64 = 9 * 60;
+
+/// Seconds from `now` (unix seconds) until the panel cancels a plan with this `deadline`: always before the agent's
+/// own deadline, however late the app got the plan (0 = at once).
+pub fn panel_delay_secs(deadline: u64, now: u64) -> u64 {
+    if deadline == 0 {
+        return DEFAULT_DECIDE_WITHIN_SECS;
+    }
+    deadline.saturating_sub(CANCEL_BEFORE_DEADLINE_SECS).saturating_sub(now)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -53,6 +67,9 @@ pub struct Plan {
     pub steps: Vec<Step>,
     #[serde(default)]
     pub limits: String,
+    /// The moment (unix seconds) the agent stops waiting for the decision; 0 = not told.
+    #[serde(default)]
+    pub deadline: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,5 +173,27 @@ mod tests {
         let p = Plan::parse(GOOD).unwrap();
         assert_eq!(p.answer(Decision::Approved, true), r#"{"connecting":true,"decision":"approved","device":"Notebook da mãe"}"#);
         assert_eq!((Decision::Approved.exit_status(), Decision::Cancelled.exit_status(), Decision::Adjust.exit_status()), (0, 1, 3));
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn the_panel_cancels_before_the_agent_gives_up_whenever_the_plan_arrives() {
+        let deadline = 1_000_000;
+        // however late the app got the plan, now + delay never passes deadline - 60 (nor the agent's deadline)
+        for now in [deadline - 600, deadline - 590, deadline - 300, deadline - 61, deadline - 60, deadline - 5, deadline, deadline + 30] {
+            let at = now + panel_delay_secs(deadline, now);
+            assert!(at <= deadline.max(now), "cancels at {at}, the agent stops at {deadline} (plan arrived at {now})");
+            if now + 60 <= deadline {
+                assert!(at <= deadline - CANCEL_BEFORE_DEADLINE_SECS, "{at} is within a minute of the agent's deadline");
+            }
+        }
+        assert_eq!(panel_delay_secs(deadline, deadline - 600), 540, "a prompt plan: nine minutes");
+        assert_eq!(panel_delay_secs(0, 5), DEFAULT_DECIDE_WITHIN_SECS, "no deadline told");
+        // a plan that arrives late (or already past its deadline) is cancelled at once
+        assert_eq!(panel_delay_secs(deadline, deadline + 1), 0);
     }
 }

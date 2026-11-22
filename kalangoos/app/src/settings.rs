@@ -88,15 +88,27 @@ impl SettingsPage {
         let otp = dropdown(&[tr("6 characters, new"), tr("8 characters, new")], if s.otp_length == 8 { 1 } else { 0 });
         sec.append(&value_row(tr("One-time password"), "", &otp));
         sec.append(&bind_switch(ui::switch_row(tr("Lock the screen when the session ends"), ""), s.lock_after, &w, |s, v| s.lock_after = v));
-        // privacy mode needs the compositor to show a cover only on this screen while the capture still sees the
-        // real one (wlr-screencopy captures the composited output, so a cover here would black out the other
-        // side too); until the KalangoOS niri can do that, the switch says so instead of pretending
-        let (priv_row, priv_sw, _) = ui::switch_row(
+        // privacy mode needs the KalangoOS compositor (niri patch 0012: a cover only the local monitors show, the
+        // captures keep the real desktop): elsewhere the switch stays off, with the reason
+        let privacy_ok = crate::kalangod::compositor_supports_privacy();
+        let (pr_row, pr_sw, _) = ui::switch_row(
             tr("Black screen here during unattended access"),
-            tr("Whoever is nearby does not see what is done (privacy mode). Needs support from the KalangoOS compositor; not available yet"),
+            if privacy_ok {
+                tr("Only when nobody approved the access here. Whoever is nearby does not see what is done; Esc Esc and the Stop button keep working")
+            } else {
+                tr("Needs the KalangoOS compositor, which this session is not running")
+            },
         );
-        priv_sw.set_sensitive(false);
-        sec.append(&priv_row);
+        pr_sw.set_active(privacy_ok && s.privacy_black);
+        pr_sw.set_sensitive(privacy_ok);
+        if privacy_ok {
+            let w2 = w.clone();
+            pr_sw.connect_state_set(move |_, v| {
+                set(&w2, |st| st.privacy_black = v);
+                glib::Propagation::Proceed
+            });
+        }
+        sec.append(&pr_row);
         sec.append(&bind_switch(ui::switch_row(tr("Record every session"), tr("In Videos › Kalango Remote; deleted after 30 days")), s.record, &w, |s, v| s.record = v));
         left.append(&sec);
 

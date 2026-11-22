@@ -53,9 +53,17 @@ Em desenvolvimento, já usável entre dois computadores Linux. O que funciona e 
 - **O plano do agente**: `kalango-remote agent-plan ARQUIVO|-` mostra o plano para aprovação e responde com a decisão
   (contrato em `kalangoos/app/src/plan.rs`; teste em `kalangoos/scripts/testar-plano.sh`).
 
-Ainda não: o modo privacidade (tela preta só aqui) — a captura por `wlr-screencopy` pegaria a cobertura e o outro lado
-veria preto; precisa de apoio do compositor do KalangoOS. Não testado: o niri numa sessão de verdade (só aninhado) e dois
-computadores físicos.
+- **Modo privacidade** ("tela preta aqui"): num acesso que ninguém aprovou neste computador (senha fixa ou aparelho
+  permitido), o monitor local fica coberto de preto — só o aviso "está controlando" com o botão Parar e o contorno ficam
+  por cima — enquanto quem controla continua vendo a área de trabalho de verdade. É o niri do KalangoOS (patch 0012)
+  que faz: a cobertura só existe para a tela local, a captura por `wlr-screencopy` e os screencasts não a veem. A entrada
+  da própria pessoa não chega aos programas escondidos, mas **Esc Esc**, o botão Parar e o botão de energia seguem
+  funcionando; a cobertura sai quando a sessão acaba ou o núcleo morre, e some enquanto um pedido de acesso espera
+  resposta. Fora do niri do KalangoOS a chave fica desligada, com o motivo.
+- **O agente do KalangoOS** propõe a conexão (`remoto.conectar`): o plano aparece no painel e só um clique da pessoa
+  conecta.
+
+Não testado: o niri numa sessão de verdade (só aninhado) e dois computadores físicos.
 
 ### Compilar e rodar (Ubuntu 24.04, sem sudo)
 

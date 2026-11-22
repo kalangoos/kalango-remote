@@ -294,6 +294,19 @@ impl Window {
             root.set_size_request(if narrow { -1 } else { 560 }, -1);
             root.set_margin_start(if narrow { 14 } else { 0 });
         });
+        // nobody decided in time: the plan is cancelled here, before the agent gives up waiting (its limit is 10 minutes
+        // and it then tells the person nothing was done: a click that came later must not connect anyway)
+        let weak_panel = Rc::downgrade(&panel);
+        let me = Rc::downgrade(self);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let delay = crate::plan::panel_delay_secs(plan.deadline, now) as u32;
+        glib::timeout_add_seconds_local_once(delay, move || {
+            let (Some(w), Some(panel)) = (me.upgrade(), weak_panel.upgrade()) else { return };
+            let pending = w.plan.borrow().as_ref().is_some_and(|current| Rc::ptr_eq(current, &panel));
+            if pending {
+                panel.decide(Decision::Cancelled);
+            }
+        });
         *self.plan.borrow_mut() = Some(panel);
         self.show_page("home");
     }

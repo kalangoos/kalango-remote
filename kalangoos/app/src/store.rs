@@ -56,6 +56,8 @@ pub struct Settings {
     pub lock_after: bool,
     pub privacy_black: bool,
     pub record: bool,
+    /// two-step verification (the secret is in the keyring)
+    pub two_factor: bool,
     pub otp_length: u8,
     /// "cloudflare", "lan" or "server"
     pub network: String,
@@ -87,6 +89,7 @@ impl Default for Settings {
             lock_after: true,
             privacy_black: true,
             record: false,
+            two_factor: false,
             otp_length: 6,
             network: "cloudflare".into(),
             server_id: String::new(),

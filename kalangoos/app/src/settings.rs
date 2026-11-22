@@ -82,8 +82,8 @@ impl SettingsPage {
         let set_pw = ui::button(tr("Set password…"), None, "");
         set_pw.set_valign(Align::Center);
         sec.append(&value_row(tr("Fixed password"), tr("Kept in the system's keyring (later: the KalangoOS vault)"), &set_pw));
-        let (tfa_row, tfa_sw, _) = ui::switch_row(tr("Two-step verification"), tr("Not available yet in this version"));
-        tfa_sw.set_sensitive(false);
+        let (tfa_row, tfa_sw, _) = ui::switch_row(tr("Two-step verification"), tr("Asks for the authenticator app code on every unattended access"));
+        tfa_sw.set_active(s.two_factor && secrets::exists("two-factor", "default"));
         sec.append(&tfa_row);
         let otp = dropdown(&[tr("6 characters, new"), tr("8 characters, new")], if s.otp_length == 8 { 1 } else { 0 });
         sec.append(&value_row(tr("One-time password"), "", &otp));
@@ -312,6 +312,22 @@ impl SettingsPage {
             glib::Propagation::Proceed
         });
         let w2 = w.clone();
+        tfa_sw.connect_state_set(move |sw, on| {
+            if on && !secrets::exists("two-factor", "default") {
+                // the switch only turns on once the first code of the authenticator app was right
+                two_factor_dialog(sw, &w2);
+                return glib::Propagation::Stop;
+            }
+            if !on {
+                secrets::clear("two-factor", "default");
+                if let Some(w) = w2.upgrade() {
+                    w.toast(tr("Two-step verification turned off"));
+                }
+            }
+            set(&w2, |st| st.two_factor = on);
+            glib::Propagation::Proceed
+        });
+        let w2 = w.clone();
         otp.connect_selected_notify(move |d| {
             let n = if d.selected() == 1 { 8 } else { 6 };
             set(&w2, |s| s.otp_length = n);
@@ -350,6 +366,75 @@ fn cloudflared_status() -> (bool, String) {
         }
         _ => (false, tr("cloudflared is not installed: sharing through Cloudflare will not open").to_owned()),
     }
+}
+
+/// Turning two-step verification on: a new secret as a QR code and as text for the authenticator app, and the
+/// first code it shows to prove it was set up; only then is the secret kept (in the keyring).
+fn two_factor_dialog(anchor: &gtk::Switch, w: &Weak<Window>) {
+    use kalango_remote_proto::totp;
+    let Ok(secret) = totp::new_secret() else {
+        if let Some(w) = w.upgrade() {
+            w.toast(tr("Could not make a secret: no source of randomness"));
+        }
+        return;
+    };
+    let pop = gtk::Popover::new();
+    pop.add_css_class("kr-menu");
+    let b = ui::vbox(8, "");
+    for set_margin in [gtk::Widget::set_margin_start, gtk::Widget::set_margin_end, gtk::Widget::set_margin_top, gtk::Widget::set_margin_bottom] {
+        set_margin(b.upcast_ref(), 8);
+    }
+    b.set_size_request(300, -1);
+    b.append(&ui::label(tr("Two-step verification"), "kr-row-title"));
+    b.append(&ui::para(tr("Scan the code with an authenticator app, or type the key in it. Then enter the 6 digits it shows."), "kr-row-sub"));
+    let account = glib::host_name().to_string();
+    let url = totp::otpauth_url(&secret, &account, "Kalango Remote");
+    if let Some(t) = crate::home::qr_texture(&url) {
+        let img = gtk::Image::from_paintable(Some(&t));
+        img.set_pixel_size(168);
+        img.set_halign(Align::Center);
+        b.append(&img);
+    }
+    let text = totp::base32(&secret);
+    let spaced: Vec<&str> = text.as_bytes().chunks(4).filter_map(|c| std::str::from_utf8(c).ok()).collect();
+    let key = ui::label(&spaced.join(" "), "kr-mono");
+    key.set_focusable(false);
+    key.set_halign(Align::Center);
+    b.append(&key);
+    let code = gtk::Entry::new();
+    code.set_placeholder_text(Some(tr("6-digit code")));
+    code.set_max_length(7);
+    code.set_input_purpose(gtk::InputPurpose::Digits);
+    b.append(&code);
+    let err = ui::label("", "kr-error-text");
+    b.append(&err);
+    let ok = ui::button(tr("Turn on"), None, "primary");
+    b.append(&ok);
+    pop.set_child(Some(&b));
+    pop.set_parent(anchor);
+    let (w, p, sw) = (w.clone(), pop.clone(), anchor.clone());
+    let code_entry = code.clone();
+    let check = move || {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        if !totp::verify(&secret, &code_entry.text(), now) {
+            err.set_text(tr("That code is not right. Check the clock of both devices."));
+            return;
+        }
+        match secrets::store("two-factor", "default", "Kalango Remote: two-step verification", &text) {
+            Ok(()) => {
+                p.popdown();
+                sw.set_active(true);
+                if let Some(w) = w.upgrade() {
+                    w.toast(tr("Two-step verification turned on"));
+                }
+            }
+            Err(e) => err.set_text(&e.to_string()),
+        }
+    };
+    let c = check.clone();
+    ok.connect_clicked(move |_| c());
+    code.connect_activate(move |_| check());
+    pop.popup();
 }
 
 fn fixed_password_dialog(anchor: &gtk::Button, w: &Weak<Window>, sub: &gtk::Label) {

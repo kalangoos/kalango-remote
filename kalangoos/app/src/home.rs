@@ -104,7 +104,7 @@ pub struct Home {
     grid_width: Cell<i32>,
 }
 
-fn qr_texture(text: &str) -> Option<gdk::Texture> {
+pub fn qr_texture(text: &str) -> Option<gdk::Texture> {
     let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M).ok()?;
     let w = code.width();
     let quiet = 2usize;
@@ -794,6 +794,11 @@ impl Home {
         if s.ask_before {
             args.push("--ask".into());
         }
+        args.push("--setup-stdin".into());
+        let setup = crate::access::current_setup(&s);
+        if setup.record_dir.is_some() {
+            crate::access::prune_recordings(&crate::access::recordings_dir(), std::time::SystemTime::now(), crate::access::KEEP_RECORDINGS_DAYS);
+        }
         *self.info.borrow_mut() = ShareInfo { lan, ..Default::default() };
         self.core_answered.set(false);
         let h = Rc::downgrade(self);
@@ -803,6 +808,9 @@ impl Home {
             }
         }) {
             Ok(c) => {
+                let mut packet = serde_json::to_value(&setup).unwrap_or_default();
+                packet["cmd"] = "setup".into();
+                c.send(&packet);
                 *self.core.borrow_mut() = Some(c);
                 self.share.opening_step.set_text(if lan {
                     tr("starting the direct connection on this network")

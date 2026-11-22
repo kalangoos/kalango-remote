@@ -118,6 +118,9 @@ impl Incoming {
                 }
                 if let Some(a) = ended {
                     crate::shell_sound::play("kalango-remote-stop");
+                    if self.active.borrow().is_empty() && Window::get().is_some_and(|w| w.settings.borrow().lock_after) {
+                        crate::access::lock_screen();
+                    }
                     a.banner.destroy();
                     if let Some(o) = a.outline {
                         o.destroy();

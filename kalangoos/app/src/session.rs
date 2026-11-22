@@ -142,6 +142,9 @@ impl Session {
             Kind::Files => args.push("--files".into()),
             Kind::Control => {}
         }
+        if self.auto_record() {
+            args.extend(["--record-dir".into(), crate::access::recordings_dir().to_string_lossy().into_owned()]);
+        }
         let me = Rc::downgrade(self);
         match Core::spawn(&args, move |m| {
             if let Some(s) = me.upgrade() {
@@ -151,6 +154,73 @@ impl Session {
             Ok(c) => *self.core.borrow_mut() = Some(c),
             Err(e) => (self.on_event)(ConnectEvent::Failed(e.to_string())),
         }
+    }
+
+    /// The shared computer asks for its authenticator code (two-step verification): a small window over this
+    /// app, the 6 digits go to the core; cancelling ends the attempt.
+    fn ask_two_factor(self: &Rc<Session>, wrong: bool) {
+        let dialog = gtk::Window::builder().title(tr("Verification code")).resizable(false).modal(true).build();
+        dialog.add_css_class("kr-window");
+        dialog.add_css_class("kr-dialog");
+        if let Some(w) = self.main.upgrade() {
+            dialog.set_transient_for(Some(&w.window));
+        }
+        let no_titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        no_titlebar.set_visible(false);
+        dialog.set_titlebar(Some(&no_titlebar));
+        let root = ui::vbox(12, "kr-dialog-body");
+        root.set_size_request(380, -1);
+        let head = ui::hbox(8, "");
+        head.append(&ui::icon("escudo", "k_accent", 16));
+        head.append(&ui::label(tr("Two-step verification"), "kr-big-title"));
+        root.append(&head);
+        root.append(&ui::para(tr("This computer asks for the code of its authenticator app. Enter the 6 digits it shows now."), "kr-caption"));
+        let entry = gtk::Entry::new();
+        entry.set_placeholder_text(Some(tr("6-digit code")));
+        entry.set_max_length(7);
+        entry.set_input_purpose(gtk::InputPurpose::Digits);
+        root.append(&entry);
+        let err = ui::label(if wrong { tr("That code is not right. Try the next one.") } else { "" }, "kr-error-text");
+        root.append(&err);
+        let row = ui::hbox(8, "");
+        row.append(&ui::spacer());
+        let cancel = ui::button(tr("Cancel"), None, "ghost");
+        let ok = ui::button(tr("Confirm"), None, "primary");
+        row.append(&cancel);
+        row.append(&ok);
+        root.append(&row);
+        dialog.set_child(Some(&root));
+        let (me, d) = (Rc::downgrade(self), dialog.clone());
+        let e = entry.clone();
+        let send = move || {
+            let code: String = e.text().chars().filter(|c| c.is_ascii_digit()).collect();
+            if code.len() != 6 {
+                err.set_text(tr("Enter the 6 digits."));
+                return;
+            }
+            if let Some(s) = me.upgrade() {
+                s.send(json!({"cmd": "2fa", "code": code}));
+            }
+            d.destroy();
+        };
+        let s2 = send.clone();
+        ok.connect_clicked(move |_| s2());
+        entry.connect_activate(move |_| send());
+        let (me, d) = (Rc::downgrade(self), dialog.clone());
+        cancel.connect_clicked(move |_| {
+            d.destroy();
+            if let Some(s) = me.upgrade() {
+                (s.on_event)(ConnectEvent::Failed(tr("Cancelled: the code of the authenticator app was not entered.").to_owned()));
+                s.close();
+            }
+        });
+        dialog.present();
+        entry.grab_focus();
+    }
+
+    /// "Record every session" is on, so this one is recorded from its first frame.
+    fn auto_record(&self) -> bool {
+        self.main.upgrade().is_some_and(|w| w.settings.borrow().record)
     }
 
     fn send(&self, v: Value) {
@@ -212,6 +282,7 @@ impl Session {
                 }
                 self.update_route(v["fps"].as_i64());
             }
+            "message" if s("msgtype") == "input-2fa" => self.ask_two_factor(s("title") == "Wrong 2FA Code"),
             "message" => {
                 if let Some(ev) = classify_message(&s("msgtype"), &s("title"), &s("text")) {
                     if self.connected.get() {
@@ -827,7 +898,13 @@ impl Session {
             }
         });
         let me = Rc::downgrade(self);
-        let recording = Cell::new(false);
+        let recording = Cell::new(self.auto_record());
+        if recording.get() {
+            self.send(json!({"cmd": "record", "on": true}));
+            if let Some(img) = rec.child().and_downcast::<gtk::Image>() {
+                ui::set_icon(&img, "anel", "k_coral", 16);
+            }
+        }
         rec.connect_clicked(move |b| {
             if let Some(s) = me.upgrade() {
                 recording.set(!recording.get());

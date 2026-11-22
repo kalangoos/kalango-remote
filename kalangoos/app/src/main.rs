@@ -8,6 +8,7 @@
 //!   kalango-remote ssh-command HOST-ID  the command that opens a saved SSH server, as a JSON array
 //!                                       (for KalangoOS's Terminal; docs/HOSTS.md)
 
+mod access;
 mod core;
 mod home;
 mod i18n;

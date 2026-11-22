@@ -2744,6 +2744,35 @@ impl Connection {
         )
     }
 
+    /// A session that came in with the fixed password (unattended access) gets only what Kalango Remote grants it:
+    /// no file manager, terminal, camera, port forwarding, input blocking, privacy mode or recording of the
+    /// owner, whatever the peer asks for. A click-approved session is not touched (the person chose its
+    /// permissions in the request). Also refused: the fixed password was changed or cleared while this login
+    /// was being checked. Returns false when the connection must end.
+    async fn limit_permanent_session(&mut self, generation: u64) -> bool {
+        let asks_for_more = self.file_transfer.is_some()
+            || self.terminal
+            || self.view_camera
+            || self.port_forward_socket.is_some()
+            || self.port_forward_address.len() > 0;
+        if asks_for_more {
+            self.send_login_error("No permission: this access has no files, terminal, camera or tunnels")
+                .await;
+            sleep(1.).await;
+            return false;
+        }
+        self.file = false;
+        self.restart = false;
+        self.recording = false;
+        self.block_input = false;
+        self.privacy_mode = false;
+        if !crate::kalango::note_permanent(self.inner.id(), generation) {
+            self.send_login_error("The password changed").await;
+            return false;
+        }
+        true
+    }
+
     fn permission(
         enable_prefix_option: &str,
         control_permissions: &Option<ControlPermissions>,
@@ -3107,17 +3136,19 @@ impl Connection {
                 }
                 self.try_start_cm(lr.my_id, lr.my_name, false);
             } else {
-                if let Some(secs) = crate::kalango::lockout::locked() {
+                // the attempt is counted in the same step as the check, before anything is awaited
+                if let Some(secs) = crate::kalango::lockout::reserve() {
                     self.send_login_error(&format!("Too many wrong attempts; try again in {secs} s"))
                         .await;
                     return true;
                 }
+                let permanent_generation = crate::kalango::permanent_generation();
                 let (failure, res) = self.check_failure(0).await;
                 if !res {
+                    crate::kalango::lockout::release();
                     return true;
                 }
                 if !self.validate_password(allow_logon_screen_password) {
-                    crate::kalango::lockout::fail();
                     self.update_failure_with_scope(failure, false, 0, FailureScope::Default);
                     self.check_update_temporary_password(false);
                     self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
@@ -3126,8 +3157,15 @@ impl Connection {
                 } else {
                     if self.require_2fa.is_none() {
                         crate::kalango::lockout::success();
+                    } else {
+                        crate::kalango::lockout::release();
                     }
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
+                    if self.conn_audit_primary_auth == ConnAuditPrimaryAuth::PermanentPassword
+                        && !self.limit_permanent_session(permanent_generation).await
+                    {
+                        return false;
+                    }
                     // Kalango Remote ("ask before each access"): the right password only lets the
                     // request reach the person at this computer, who still approves it (or not) in
                     // the request window; the approval arrives as ipc::Data::Authorize.
@@ -3152,13 +3190,14 @@ impl Connection {
             if !self.awaiting_2fa {
                 return true;
             }
-            if let Some(secs) = crate::kalango::lockout::locked() {
+            if let Some(secs) = crate::kalango::lockout::reserve() {
                 self.send_login_error(&format!("Too many wrong attempts; try again in {secs} s"))
                     .await;
                 return true;
             }
             let (failure, res) = self.check_failure(1).await;
             if !res {
+                crate::kalango::lockout::release();
                 return true;
             }
             if let Some(totp) = self.require_2fa.as_ref() {
@@ -3183,7 +3222,6 @@ impl Connection {
                             self.authorized,
                         );
                     } else {
-                        crate::kalango::lockout::fail();
                         self.update_failure(failure, false, 1);
                         self.send_login_error(crate::client::LOGIN_MSG_2FA_WRONG)
                             .await;
@@ -5451,6 +5489,7 @@ impl Connection {
             return;
         }
         self.closed = true;
+        crate::kalango::forget_permanent(self.inner.id());
         #[cfg(windows)]
         self.privacy_preparation.take();
         // If voice A,B -> C, and A,B has voice call

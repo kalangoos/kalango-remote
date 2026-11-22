@@ -24,8 +24,11 @@ pub struct Setup {
     pub record_dir: Option<String>,
     /// Share through the person's own server instead of the tunnel.
     pub server: Option<Server>,
-    /// What a session may do by default (files, terminal, port forwarding and remote restart are never on by
-    /// default; a request the person approves can add files for that session).
+    /// What a session may do. Terminal, port forwarding, remote restart and printer redirection are off for every
+    /// session (global options: the request dialog never offers them). Files, camera, input blocking, privacy
+    /// mode and recording of the owner are NOT global: the core refuses them only for sessions that came in with
+    /// the fixed password (`limit_permanent_session` in the server), so a click-approved session can still get
+    /// files in its request. Clipboard and audio follow the settings for every session.
     pub clipboard: bool,
     pub audio: bool,
 }
@@ -61,8 +64,9 @@ impl Setup {
             ("allow-auto-record-incoming", if self.record_dir.is_some() { "Y" } else { "N" }.to_owned()),
         ];
         let yn = |on: bool| if on { "" } else { "N" }.to_owned();
-        o.push(("enable-file-transfer", "N".into()));
+        o.push(("enable-file-transfer", "".into()));
         o.push(("enable-terminal", "N".into()));
+        o.push(("enable-remote-printer", "N".into()));
         o.push(("enable-tunnel", "N".into()));
         o.push(("enable-remote-restart", "N".into()));
         o.push(("enable-clipboard", yn(self.clipboard)));
@@ -115,9 +119,10 @@ mod tests {
     #[test]
     fn nothing_but_clipboard_and_audio_is_granted_by_default() {
         let o = Setup { fixed_password: Some("segredo-longo".into()), clipboard: true, ..Default::default() }.options(false);
-        for k in ["enable-file-transfer", "enable-terminal", "enable-tunnel", "enable-remote-restart", "enable-audio"] {
+        for k in ["enable-terminal", "enable-tunnel", "enable-remote-restart", "enable-remote-printer", "enable-audio"] {
             assert_eq!(get(&o, k), "N", "{k}");
         }
+        assert_eq!(get(&o, "enable-file-transfer"), "", "files stay possible for a click-approved session");
         assert_eq!(get(&o, "enable-clipboard"), "");
     }
 

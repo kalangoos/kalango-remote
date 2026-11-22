@@ -679,8 +679,8 @@ impl Home {
         self.push_setup();
     }
 
-    /// While sharing, what was turned off (or on) takes effect now: the core gets the new setup, and when
-    /// unattended access went off the sessions that came in with the fixed password end.
+    /// While sharing, what was turned off (or on) takes effect now: the core gets the new setup and, when the
+    /// fixed password changed or was cleared, closes the sessions that came in with the old one.
     pub fn push_setup(&self) {
         let Some(w) = self.win() else { return };
         if self.core.borrow().is_none() {
@@ -695,12 +695,7 @@ impl Home {
         packet["cmd"] = "setup".into();
         packet["ask"] = s.ask_before.into();
         self.send_to_core(&packet);
-        *self.sent_setup.borrow_mut() = Some((setup.clone(), s.ask_before));
-        if setup.fixed_password.is_none() {
-            if let Some(i) = self.incoming.borrow().clone() {
-                i.end_unattended();
-            }
-        }
+        *self.sent_setup.borrow_mut() = Some((setup, s.ask_before));
     }
 
     // -------------------------------------------------------------------------------------- layout
@@ -930,6 +925,20 @@ impl Home {
                     self.core_failed(why);
                     return;
                 }
+                if ours && *self.state.borrow() == ShareState::Sharing {
+                    // the core stopped while sharing (a setup it could not apply, a crash): the same clean-up as
+                    // stopping, and the owner is told why
+                    if let Some(i) = self.incoming.borrow_mut().take() {
+                        i.close_all();
+                    }
+                    let why = if exit.last_error.is_empty() {
+                        trf("It exited with code {code}.", &[("code", exit.code.map_or("?".into(), |c| c.to_string()))])
+                    } else {
+                        exit.last_error
+                    };
+                    self.core_failed(why);
+                    return;
+                }
                 if matches!(*self.state.borrow(), ShareState::Sharing | ShareState::Opening) {
                     self.set_state(ShareState::Idle);
                 }
@@ -989,6 +998,25 @@ impl Home {
                     c.stop();
                 }
                 self.set_state(if offline { ShareState::NoInternet } else { ShareState::Failed(text) });
+            }
+            "error" if v["kind"] == "setup" => {
+                if let Some(w) = self.win() {
+                    w.toast(&trf("Sharing could not use the settings: {why}", &[("why", s("text"))]));
+                }
+            }
+            // wrong passwords or codes locked the whole share for a while: the owner is told when it ends
+            "lockout" if v["secs"].as_u64().unwrap_or(0) > 0 => {
+                let until = glib::DateTime::now_local()
+                    .and_then(|d| d.add_seconds(v["secs"].as_f64().unwrap_or(0.0)))
+                    .ok()
+                    .and_then(|d| d.format("%H:%M").ok())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let text = trf("Locked until {time} after {n} wrong attempts", &[("time", until), ("n", v["failures"].as_u64().unwrap_or(0).to_string())]);
+                eprintln!("kalango-remote: {text}");
+                if let Some(w) = self.win() {
+                    w.toast(&text);
+                }
             }
             "password" => {
                 self.info.borrow_mut().password = s("password");

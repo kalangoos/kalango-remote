@@ -23,7 +23,6 @@ struct Request {
 
 struct Active {
     name: String,
-    unattended: bool,
     keyboard: bool,
     started: Instant,
     outline: Option<gtk::Window>,
@@ -94,9 +93,7 @@ impl Incoming {
                     if !self.active.borrow().contains_key(&id) {
                         // allowed without our dialog (a fixed password): the permission now
                         self.grant(v["keyboard"].as_bool().unwrap_or(true));
-                        let mut u = v.clone();
-                        u["unattended"] = true.into();
-                        self.start_indicator(id, &u);
+                        self.start_indicator(id, v);
                     }
                 } else if !self.requests.borrow().contains_key(&id) {
                     // a device in the allowed list (still in time) goes straight in
@@ -145,14 +142,6 @@ impl Incoming {
     /// Ends every session going on (Esc Esc anywhere: the compositor runs `kalango-remote end-sessions`).
     pub fn end_sessions(&self) {
         let ids: Vec<i32> = self.active.borrow().keys().copied().collect();
-        for id in ids {
-            self.send(json!({"cmd": "close", "id": id}));
-        }
-    }
-
-    /// Ends the sessions that came in with the fixed password (unattended access was turned off).
-    pub fn end_unattended(&self) {
-        let ids: Vec<i32> = self.active.borrow().iter().filter(|(_, a)| a.unattended).map(|(id, _)| *id).collect();
         for id in ids {
             self.send(json!({"cmd": "close", "id": id}));
         }
@@ -428,7 +417,7 @@ impl Incoming {
             }
             glib::ControlFlow::Continue
         });
-        self.active.borrow_mut().insert(id, Active { name, unattended, keyboard, started, outline, banner, label });
+        self.active.borrow_mut().insert(id, Active { name, keyboard, started, outline, banner, label });
     }
 
     fn reply_chat(self: &Rc<Incoming>, id: i32, who: &str) {

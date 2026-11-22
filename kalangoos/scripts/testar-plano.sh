@@ -33,6 +33,7 @@ for b in "${BOTOES[@]}"; do
   xdotool mousemove "$x" "$y" click 1
   wait $CP; R=$?
   kill $AP 2>/dev/null; pkill -P $AP 2>/dev/null; sleep 1
+  if [ "$R" -eq 0 ] && ! grep -q '"decision"' "$T/saida.txt"; then echo "FALHOU: $nome saiu 0 sem nenhuma decisão no stdout"; FALHAS=1; continue; fi
   if [ "$R" -eq "$esperado" ] && grep -q "\"decision\":\"$([ "$nome" = aprovar ] && echo approved || { [ "$nome" = cancelar ] && echo cancelled || echo adjust; })\"" "$T/saida.txt"; then
     echo "ok: $nome → saída $R, $(cat "$T/saida.txt")"
   else
@@ -57,5 +58,25 @@ for como in kill fechar; do
   if [ "$R" -ne 0 ] && ! grep -q approved "$T/saida.txt"; then echo "ok: $como com o plano pendente → saída $R, nada aprovado"
   else echo "FALHOU: $como com o plano pendente → saída $R: $(cat "$T/saida.txt")"; FALHAS=1; fi
 done
+# um segundo plano enquanto o primeiro espera: o primeiro termina cancelado (saída 1 e "cancelled" no stdout)
+kalangoos/scripts/rodar-app.sh --demo > "$T/app.log" 2>&1 &
+AP=$!
+sleep 6
+WID=$(xdotool search --onlyvisible --name "Kalango Remote" | head -1)
+xdotool windowmove "$WID" 0 0 windowsize "$WID" 1500 1000
+sleep 1
+kalangoos/scripts/rodar-app.sh --demo agent-plan "$T/plano.json" > "$T/saida1.txt" 2>&1 &
+C1=$!
+sleep 3
+kalangoos/scripts/rodar-app.sh --demo agent-plan "$T/plano.json" > "$T/saida2.txt" 2>&1 &
+C2=$!
+sleep 3
+for _ in $(seq 10); do kill -0 $C1 2>/dev/null || break; sleep 1; done
+if kill -0 $C1 2>/dev/null; then kill $C1; R1=99; else wait $C1; R1=$?; fi
+xdotool mousemove 979 482 click 1
+wait $C2; R2=$?
+kill $AP 2>/dev/null; pkill -P $AP 2>/dev/null
+if [ "$R1" -eq 1 ] && grep -q '"decision":"cancelled"' "$T/saida1.txt" && [ "$R2" -eq 1 ]; then echo "ok: um segundo plano cancela o primeiro (saída $R1, cancelled)"
+else echo "FALHOU: segundo plano: primeiro saiu $R1 ($(cat "$T/saida1.txt")), segundo $R2"; FALHAS=1; fi
 echo "registros em $T"
 exit $FALHAS

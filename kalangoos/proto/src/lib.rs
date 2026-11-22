@@ -5,6 +5,7 @@
 //! commands, raw frames for video.
 
 pub mod invite;
+pub mod lockout;
 pub mod setup;
 pub mod totp;
 pub mod wire;

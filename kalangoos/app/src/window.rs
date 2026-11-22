@@ -264,7 +264,9 @@ impl Window {
     /// Shows the agent's plan for approval. The agent's command (`agent-plan`) stays open until the person
     /// decides; then it gets the decision on stdout and its exit status. A plan still waiting is cancelled.
     pub fn show_plan(self: &Rc<Window>, plan: Plan, cmd: gio::ApplicationCommandLine) {
-        if let Some(old) = self.plan.borrow_mut().take() {
+        // (taken first: the answer of the old plan borrows `self.plan` again)
+        let old = self.plan.borrow_mut().take();
+        if let Some(old) = old {
             old.decide(Decision::Cancelled);
         }
         let me = Rc::downgrade(self);

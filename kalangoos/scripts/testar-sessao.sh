@@ -50,7 +50,7 @@ case "$MODO" in
   aprovar) ARGS=(--no-tunnel --ask) ;;
   fixa) ARGS=(--no-tunnel --ask --setup-stdin)
     SETUP='{"cmd":"setup","fixed_password":"senha-fixa-de-teste-1","otp_length":6}'
-    QUADROS=1 ;;
+    MOVIMENTO=1; QUADROS=1 ;;
   duasetapas) ARGS=(--no-tunnel --setup-stdin)
     SEGREDO=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ   # 20 bytes ("12345678901234567890"); o núcleo exige 128 bits ou mais
     SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"two_factor\":\"$SEGREDO\"}"
@@ -88,6 +88,12 @@ campo() { python3 -c "import json,sys
 for l in open('$T/serve.out'):
     d=json.loads(l)
     if d.get('event')=='$1': print(d['$2']); break"; }
+senha_atual() { python3 -c "import json
+p=''
+for l in open('$T/serve.out'):
+    d=json.loads(l)
+    if d.get('event') in ('listening','password'): p=d['password']
+print(p)"; }
 for _ in $(seq 60); do grep -q '"listening"' "$T/serve.out" && break; sleep 0.5; done
 PW=$(campo listening password); ID=$(campo listening id); PK=$(campo listening pk); ADDR=$(campo listening addr); CODE=$(campo listening code)
 case "$MODO" in
@@ -148,6 +154,11 @@ if [ "$MODO" = defesas ]; then
   if grep -q '"first_frame"' "$T/t.out" || ! grep -q "Too many wrong attempts" "$T/t.out"; then echo "FALHOU: depois de 5 erros a senha certa tinha de ser recusada por bloqueio"; tail -3 "$T/t.out"; exit 1; fi
   grep -q '"event":"lockout"' "$T/serve.out" || { echo "FALHOU: o app não foi avisado do bloqueio"; exit 1; }
   echo "ok: 5 senhas erradas bloqueiam o compartilhamento todo e o app é avisado"
+  # 4. um setup que não pode ser aplicado com o compartilhamento aberto derruba o núcleo (o app mostra o motivo)
+  echo '{"cmd":"setup","two_factor":"123"}' >&3
+  for _ in $(seq 10); do kill -0 $SP 2>/dev/null || break; sleep 0.5; done
+  if kill -0 $SP 2>/dev/null || ! grep -q '"kind":"setup"' "$T/serve.out"; then echo "FALHOU: o setup inválido durante o compartilhamento não derrubou o núcleo"; exit 1; fi
+  echo "ok: setup inválido com o compartilhamento aberto derruba o núcleo e diz o motivo"
   echo "OK: defesas"; exit 0
 fi
 INICIO=$(date +%s.%N)
@@ -183,6 +194,34 @@ fi
 if [ "$MODO" = fixa ]; then
   if [ $R -eq 0 ] && grep -q '"authorized":true' "$T/serve.out" && grep -q '"secured":true' "$T/probe.out"; then
     echo "ok: a senha fixa entrou sem ninguém aprovar (acesso sem supervisão), cifrada de ponta a ponta"
+    # a senha fixa não dá arquivos (só a sessão aprovada por clique pode ganhá-los no pedido)
+    lado cli timeout 60 "$B" probe "$ALVO" --password senha-fixa-de-teste-1 --files --frames 1 --timeout 8 > "$T/arq-fixa.out" 2> /dev/null
+    if grep -q '"event":"connected"' "$T/arq-fixa.out"; then echo "FALHOU: a senha fixa abriu uma sessão de arquivos"; exit 1; fi
+    echo "ok: com a senha fixa a sessão de arquivos é recusada"
+    ( for _ in $(seq 60); do grep -q '"authorized":false.*"file_transfer":true' "$T/serve.out" && break; sleep 0.5; done
+      CID=$(python3 -c "import json
+for l in open('$T/serve.out'):
+    d=json.loads(l)
+    if d.get('event')=='connection' and not d.get('authorized') and d.get('file_transfer'): print(d['id'])" | tail -1)
+      echo "{\"cmd\":\"authorize\",\"id\":$CID,\"keyboard\":false,\"clipboard\":false,\"audio\":false,\"file\":true}" >&3 ) &
+    lado cli timeout 60 "$B" probe "$ALVO" --password "$(senha_atual)" --files --frames 1 --timeout 12 > "$T/arq-clique.out" 2> /dev/null
+    if ! grep -q '"event":"connected"' "$T/arq-clique.out"; then echo "FALHOU: a sessão de arquivos aprovada por clique foi recusada"; cat "$T/arq-clique.out" | tail -3; exit 1; fi
+    echo "ok: a sessão de arquivos aprovada por clique abre"
+    # trocar a senha fixa expulsa quem entrou com a antiga
+    lado cli timeout 40 "$B" probe "$ALVO" --password senha-fixa-de-teste-1 --frames 100000 --timeout 30 > "$T/viva.out" 2> /dev/null &
+    VP=$!
+    for _ in $(seq 40); do grep -q '"first_frame"' "$T/viva.out" && break; sleep 0.5; done
+    grep -q '"first_frame"' "$T/viva.out" || { echo "FALHOU: a sessão viva não abriu"; exit 1; }
+    VID=$(python3 -c "import json
+for l in open('$T/serve.out'):
+    d=json.loads(l)
+    if d.get('event')=='connection' and d.get('unattended'): v=d['id']
+print(v)")
+    echo '{"cmd":"setup","otp_length":6,"fixed_password":"outra-senha-fixa-2"}' >&3
+    for _ in $(seq 16); do grep -q "\"event\":\"removed\"" <(grep "\"id\":$VID[,}]" "$T/serve.out") && break; sleep 0.5; done
+    kill $VP 2>/dev/null
+    if ! grep "\"id\":$VID[,}]" "$T/serve.out" | grep -q '"event":"removed"'; then echo "FALHOU: trocar a senha fixa não encerrou a sessão $VID que entrou com a antiga"; exit 1; fi
+    echo "ok: trocar a senha fixa encerrou na hora a sessão que entrou com a antiga"
     # desligar o acesso sem supervisão vale já: o servidor recebe a configuração nova e recusa a senha fixa
     echo '{"cmd":"setup","otp_length":6}' >&3; sleep 1
     lado cli timeout 60 "$B" probe "$ALVO" --password senha-fixa-de-teste-1 --frames 1 --timeout 8 > "$T/revogada.out" 2> /dev/null

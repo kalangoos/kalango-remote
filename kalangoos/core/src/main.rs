@@ -153,6 +153,22 @@ fn apply_setup(setup: &Setup, ask: bool) -> Result<(), String> {
     for (key, value) in setup.options(ask) {
         Config::set_option(key.into(), value);
     }
+    // a fixed password that changed or was cleared evicts everyone who came in with the old one
+    {
+        static LAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        let now = setup.fixed_password.clone().unwrap_or_default();
+        let mut last = LAST.lock().unwrap();
+        let changed = last.as_ref().is_some_and(|l| *l != now);
+        *last = Some(now);
+        if changed {
+            if !Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or("")) {
+                return Err("the fixed password could not be stored".into());
+            }
+            for id in kalango::revoke_permanent() {
+                cm::close(id);
+            }
+        }
+    }
     if !Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or("")) {
         return Err("the fixed password could not be stored".into());
     }
@@ -348,7 +364,7 @@ fn serve(args: &[String]) -> i32 {
         loop {
             let now = kalango::lockout::locked();
             if now.is_some() != last.is_some() || now.is_some_and(|n| last.is_none_or(|l: u64| n > l)) {
-                emit(&o, json!({"event": "lockout", "secs": now.unwrap_or(0)}));
+                emit(&o, json!({"event": "lockout", "secs": now.unwrap_or(0), "failures": kalango::lockout::failures()}));
             }
             last = now;
             std::thread::sleep(Duration::from_secs(1));
@@ -357,6 +373,11 @@ fn serve(args: &[String]) -> i32 {
 
     for ev in cm_rx {
         if let Ok(v) = serde_json::to_value(&ev) {
+            let mut v = v;
+            if v["event"] == "connection" {
+                // came in with the fixed password (unattended access): the app says so in the banner
+                v["unattended"] = kalango::is_permanent(v["id"].as_i64().unwrap_or(0) as i32).into();
+            }
             if v["event"] == "connection" && v["authorized"] == true {
                 notify_recording(v["id"].as_i64().unwrap_or(0) as i32);
             }

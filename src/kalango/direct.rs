@@ -66,3 +66,12 @@ pub async fn run(opts: DirectOptions, on_listening: impl FnOnce(SocketAddr)) -> 
         });
     }
 }
+
+/// Registers this computer with the person's own rendezvous server (RustDesk's `RendezvousMediator`): the
+/// id and the server key come from the config options set before; connections that arrive through the
+/// server (hole punching or relay) land in the same server and the same approval as the direct ones.
+/// Only for the "own server" network choice: the default never talks to a rendezvous server.
+#[tokio::main]
+pub async fn run_rendezvous() {
+    crate::rendezvous_mediator::RendezvousMediator::start_all().await;
+}

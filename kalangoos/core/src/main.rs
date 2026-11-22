@@ -1,15 +1,17 @@
 //! kalango-remote-core · the process that runs RustDesk's core for the Kalango Remote app.
 //!
-//!   kalango-remote-core serve [--lan] [--no-tunnel] [--ask] [--port P]
+//!   kalango-remote-core serve [--lan] [--no-tunnel] [--ask] [--port P] [--setup-stdin]
 //!       Share this computer. Without --no-tunnel, opens a Cloudflare quick tunnel to a
 //!       loopback-only listener; --lan listens on every address instead (same network) and answers
 //!       the share code over UDP. --ask: a right password still needs the approval of whoever is
 //!       here. Events (JSON packets on stdout): listening, tunnel, tunnel_error, connection,
 //!       removed, chat. Commands (JSON packets on stdin): authorize, close, chat, new_password.
-//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files]
+//!       --setup-stdin: the first packet on stdin is a `kalango_remote_proto::setup::Setup` (fixed password for
+//!       unattended access, one-time password length, two-step secret, recording folder, own server).
+//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files] [--record-dir DIR] [--server HOST [--relay R] [--key K]]
 //!       Control another computer. Events and frames on stdout; commands (mouse, key, text, chat,
 //!       quality, close) on stdin. Ends when stdin closes.
-//!   kalango-remote-core probe <link|code|host:port> --password PW [--frames N] [--save F.png]
+//!   kalango-remote-core probe <link|code|host:port> --password PW [--frames N] [--save F.png] [--2fa CODE]
 //!       A session without a window, for tests: prints the events, counts frames, exits 0 after N.
 //!
 //! Packets are `kalango_remote_proto::wire`.
@@ -25,8 +27,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hbb_common::{config::Config, log, password_security};
+use hbb_common::{
+    config::{Config, LocalConfig},
+    log, password_security,
+};
 use kalango_remote_proto::{
+    setup::Setup,
+    totp,
     wire::{self, Packet},
     Invite, Target,
 };
@@ -130,6 +137,66 @@ fn commands() -> impl Iterator<Item = Value> {
 // ---------------------------------------------------------------------------------------------
 // sharing
 
+/// The first packet on stdin: what the app wants of this share. A packet that does not parse is an error,
+/// never "no protections".
+fn read_setup() -> Result<Setup, String> {
+    let v = commands().next().ok_or("no setup packet on stdin")?;
+    serde_json::from_value(v).map_err(|e| format!("setup packet not understood: {e}"))
+}
+
+static RECORDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Applies a setup (at start, and again whenever the app sends `setup` while sharing): options, the fixed
+/// password (cleared when unattended access is off), two-step verification and the recording folder.
+fn apply_setup(setup: &Setup, ask: bool) -> Result<(), String> {
+    setup.validate()?;
+    for (key, value) in setup.options(ask) {
+        Config::set_option(key.into(), value);
+    }
+    // a fixed password that changed or was cleared evicts everyone who came in with the old one
+    {
+        static LAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        let now = setup.fixed_password.clone().unwrap_or_default();
+        let mut last = LAST.lock().unwrap();
+        let changed = last.as_ref().is_some_and(|l| *l != now);
+        *last = Some(now);
+        if changed {
+            if !Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or("")) {
+                return Err("the fixed password could not be stored".into());
+            }
+            for id in kalango::revoke_permanent() {
+                cm::close(id);
+            }
+        }
+    }
+    if !Config::set_permanent_password(setup.fixed_password.as_deref().unwrap_or("")) {
+        return Err("the fixed password could not be stored".into());
+    }
+    kalango::set_two_factor(setup.two_factor.as_deref().and_then(totp::from_base32))?;
+    RECORDING.store(setup.record_dir.is_some(), std::sync::atomic::Ordering::Relaxed);
+    if let Some(dir) = &setup.record_dir {
+        set_video_dir(dir)?;
+    }
+    Ok(())
+}
+
+/// The recordings folder is private (0700) and so is every file the core makes in it (umask 077).
+fn set_video_dir(dir: &str) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(|e| format!("recording folder {dir}: {e}"))?;
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    unsafe { libc::umask(0o077) };
+    LocalConfig::set_option("video-save-directory".into(), dir.to_owned());
+    Ok(())
+}
+
+/// Tells the person on the other side that this session is being recorded (a chat message).
+fn notify_recording(id: i32) {
+    if RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
+        cm::send_chat(id, "This session is being recorded on the shared computer.".to_owned());
+    }
+}
+
 fn serve(args: &[String]) -> i32 {
     let out: Out = Arc::new(Mutex::new(protocol_out()));
     let lan = args.iter().any(|a| a == "--lan");
@@ -141,10 +208,25 @@ fn serve(args: &[String]) -> i32 {
         return 4;
     }
 
-    // one-time password: RustDesk's temporary password, renewed after each session
-    Config::set_option("verification-method".into(), "use-temporary-password".into());
-    Config::set_option("approve-mode".into(), "password".into());
-    Config::set_option(kalango::OPTION_APPROVE_AFTER_PASSWORD.into(), if ask { "Y" } else { "" }.into());
+    // how this computer may be entered: the one-time password (renewed after each session) and, for
+    // unattended access, a fixed one; two-step verification and recording of every session
+    let setup = if args.iter().any(|a| a == "--setup-stdin") {
+        match read_setup() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{e}");
+                emit(&out, json!({"event": "error", "kind": "setup", "text": e}));
+                return 5;
+            }
+        }
+    } else {
+        Setup::default()
+    };
+    if let Err(e) = apply_setup(&setup, ask) {
+        eprintln!("{e}");
+        emit(&out, json!({"event": "error", "kind": "setup", "text": e}));
+        return 5;
+    }
     if password_security::temporary_password().is_empty() {
         password_security::update_temporary_password();
     }
@@ -176,10 +258,13 @@ fn serve(args: &[String]) -> i32 {
         emit(&out, json!({"event": "error", "text": "the server did not start"}));
         return 1;
     };
+    if setup.server.is_some() {
+        std::thread::spawn(kalango::direct::run_rendezvous);
+    }
     emit(
         &out,
         json!({
-            "event": "listening", "addr": bound.to_string(), "id": id, "code": code,
+            "event": "listening", "addr": bound.to_string(), "id": id, "code": code, "server": setup.server.is_some(),
             "pk": kalango_remote_proto::invite::b64url_encode(&pk),
             "password": password_security::temporary_password(),
         }),
@@ -240,6 +325,15 @@ fn serve(args: &[String]) -> i32 {
         for c in commands() {
             let id = c["id"].as_i64().unwrap_or(0) as i32;
             match c["cmd"].as_str().unwrap_or("") {
+                "setup" => match serde_json::from_value::<Setup>(c.clone()).map_err(|e| e.to_string()).and_then(|s| apply_setup(&s, c["ask"].as_bool().unwrap_or(ask)).map(|_| s)) {
+                    Ok(_) => emit(&o, json!({"event": "setup_applied"})),
+                    // a setup that cannot be applied must not leave the old one half-working: stop sharing
+                    Err(e) => {
+                        eprintln!("{e}");
+                        emit(&o, json!({"event": "error", "kind": "setup", "text": e}));
+                        std::process::exit(5);
+                    }
+                },
                 "authorize" => {
                     for perm in ["keyboard", "clipboard", "audio", "file"] {
                         if let Some(v) = c[perm].as_bool() {
@@ -247,6 +341,7 @@ fn serve(args: &[String]) -> i32 {
                         }
                     }
                     cm::authorize(id);
+                    notify_recording(id);
                 }
                 "close" => cm::close(id),
                 "chat" => cm::send_chat(id, c["text"].as_str().unwrap_or("").to_owned()),
@@ -262,8 +357,30 @@ fn serve(args: &[String]) -> i32 {
         std::process::exit(0);
     });
 
+    // the lockout of the whole share (wrong passwords or codes) is told to the app
+    let o = out.clone();
+    std::thread::spawn(move || {
+        let mut last = None;
+        loop {
+            let now = kalango::lockout::locked();
+            if now.is_some() != last.is_some() || now.is_some_and(|n| last.is_none_or(|l: u64| n > l)) {
+                emit(&o, json!({"event": "lockout", "secs": now.unwrap_or(0), "failures": kalango::lockout::failures()}));
+            }
+            last = now;
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+
     for ev in cm_rx {
         if let Ok(v) = serde_json::to_value(&ev) {
+            let mut v = v;
+            if v["event"] == "connection" {
+                // came in with the fixed password (unattended access): the app says so in the banner
+                v["unattended"] = kalango::is_permanent(v["id"].as_i64().unwrap_or(0) as i32).into();
+            }
+            if v["event"] == "connection" && v["authorized"] == true {
+                notify_recording(v["id"].as_i64().unwrap_or(0) as i32);
+            }
             emit(&out, v);
         }
         // a finished session renews the one-time password
@@ -291,6 +408,8 @@ fn resolve(target: &str, out: &Out) -> Result<(String, bool), String> {
                 None => Err("code_not_found".into()),
             }
         }
+        // through the own server (the options were set at start): RustDesk's rendezvous does the rest
+        Target::Id(id) => Ok((id, false)),
         Target::Invite(inv) => {
             let addr = if inv.is_tunnel() {
                 emit(out, json!({"event": "step", "step": "tunnel", "host": inv.host}));
@@ -322,6 +441,17 @@ fn client(args: &[String], probe: bool) -> i32 {
         return 2;
     };
     let password = arg_value(args, "--password").unwrap_or_default();
+    if let Some(dir) = arg_value(args, "--record-dir") {
+        if let Err(e) = set_video_dir(&dir) {
+            log::warn!("{e}");
+        }
+    }
+    // the own server only for a session that asks for it; the others never talk to a rendezvous server
+    let server = arg_value(args, "--server").unwrap_or_default();
+    let (relay, key) = if server.is_empty() { Default::default() } else { (arg_value(args, "--relay").unwrap_or_default(), arg_value(args, "--key").unwrap_or_default()) };
+    for (k, v) in [("custom-rendezvous-server", server), ("relay-server", relay), ("key", key)] {
+        Config::set_option(k.into(), v);
+    }
     let kind = if args.iter().any(|a| a == "--files") {
         session::Kind::Files
     } else if args.iter().any(|a| a == "--view-only") {
@@ -381,6 +511,7 @@ fn client(args: &[String], probe: bool) -> i32 {
             "lock_screen" => s.lock_screen(),
             "fps" => s.set_custom_fps(i("value")),
             "record" => s.record_screen(b("on")),
+            "2fa" => s.send2fa(st("code"), b("trust")),
             "read_dir" => session::read_remote_dir(&s, &st("path")),
             "transfer" => {
                 let id = session::transfer(&s, &st("path"), &st("to"), b("from_remote"));
@@ -434,6 +565,11 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
             let _ = writeln!(out.lock().unwrap(), "{v}");
             if matches!(ev, session::Event::Message { ref msgtype, .. } if msgtype.contains("error")) {
                 return 1;
+            }
+            if let (session::Event::Message { msgtype, .. }, Some(code)) = (&ev, arg_value(args, "--2fa")) {
+                if msgtype == "input-2fa" {
+                    s.send2fa(code, false);
+                }
             }
         }
         if let Some(f) = s.ui_handler.frames.take(Duration::from_millis(200)) {

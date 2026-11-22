@@ -15,6 +15,7 @@
 
 pub mod cm;
 pub mod direct;
+pub mod lockout;
 pub mod session;
 pub mod wlr_input;
 
@@ -48,6 +49,66 @@ pub const OPTION_APPROVE_AFTER_PASSWORD: &str = "kalango-approve-after-password"
 
 pub(crate) fn approve_after_password() -> bool {
     Config::get_option(OPTION_APPROVE_AFTER_PASSWORD) == "Y"
+}
+
+static PERMANENT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+lazy_static::lazy_static! {
+    static ref PERMANENT: Mutex<std::collections::HashSet<i32>> = Default::default();
+}
+
+/// Changes whenever the fixed password is changed or cleared.
+pub fn permanent_generation() -> u64 {
+    PERMANENT_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Records a connection that came in with the fixed password; false if the password changed since `generation`
+/// (taken before the login was checked), so a login that raced with the change does not survive it.
+pub fn note_permanent(id: i32, generation: u64) -> bool {
+    let mut ids = PERMANENT.lock().unwrap();
+    if permanent_generation() != generation {
+        return false;
+    }
+    ids.insert(id);
+    true
+}
+
+pub fn forget_permanent(id: i32) {
+    PERMANENT.lock().unwrap().remove(&id);
+}
+
+pub fn is_permanent(id: i32) -> bool {
+    PERMANENT.lock().unwrap().contains(&id)
+}
+
+/// The fixed password changed or was cleared: returns the connections that came in with the old one (to close).
+pub fn revoke_permanent() -> Vec<i32> {
+    let mut ids = PERMANENT.lock().unwrap();
+    PERMANENT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    ids.drain().collect()
+}
+
+/// Two-step verification of everyone who connects: `Some(secret)` asks for the authenticator code (RFC 6238),
+/// `None` stops asking. RustDesk's server already checks it when this option is set.
+pub fn set_two_factor(secret: Option<Vec<u8>>) -> Result<(), String> {
+    let value = match secret {
+        None => String::new(),
+        Some(secret) => crate::auth_2fa::TOTPInfo {
+            name: Config::get_id(),
+            secret,
+            digits: 6,
+            created_at: hbb_common::get_time(),
+        }
+        .into_string()
+        .map_err(|e| e.to_string())?,
+    };
+    let wanted = !value.is_empty();
+    Config::set_option("2fa".to_owned(), value);
+    // never run without the code prompt that was asked for
+    if wanted && crate::auth_2fa::get_2fa(None).is_none() {
+        return Err("two-step verification could not be turned on (the secret was not accepted)".into());
+    }
+    Ok(())
 }
 
 /// This computer's identity as an invite carries it: (RustDesk id, ed25519 public signing key).

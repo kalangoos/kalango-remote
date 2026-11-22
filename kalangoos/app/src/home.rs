@@ -80,6 +80,7 @@ pub struct Home {
     retry_at: Rc<Cell<u64>>,
     info: RefCell<ShareInfo>,
     core: RefCell<Option<Core>>,
+    sent_setup: RefCell<Option<(kalango_remote_proto::setup::Setup, bool)>>,
     incoming: RefCell<Option<Rc<Incoming>>>,
     // connect
     target: gtk::Entry,
@@ -104,7 +105,7 @@ pub struct Home {
     grid_width: Cell<i32>,
 }
 
-fn qr_texture(text: &str) -> Option<gdk::Texture> {
+pub fn qr_texture(text: &str) -> Option<gdk::Texture> {
     let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M).ok()?;
     let w = code.width();
     let quiet = 2usize;
@@ -520,6 +521,7 @@ impl Home {
             retry_at: Rc::new(Cell::new(0)),
             info: RefCell::new(ShareInfo::default()),
             core: RefCell::new(None),
+            sent_setup: RefCell::new(None),
             incoming: RefCell::new(None),
             target,
             target_box,
@@ -674,6 +676,26 @@ impl Home {
         } else {
             tr("Off · fixed password and allowed devices in Settings")
         });
+        self.push_setup();
+    }
+
+    /// While sharing, what was turned off (or on) takes effect now: the core gets the new setup and, when the
+    /// fixed password changed or was cleared, closes the sessions that came in with the old one.
+    pub fn push_setup(&self) {
+        let Some(w) = self.win() else { return };
+        if self.core.borrow().is_none() {
+            return;
+        }
+        let s = w.settings.borrow().clone();
+        let setup = crate::access::current_setup(&s);
+        if self.sent_setup.borrow().as_ref() == Some(&(setup.clone(), s.ask_before)) {
+            return;
+        }
+        let mut packet = serde_json::to_value(&setup).unwrap_or_default();
+        packet["cmd"] = "setup".into();
+        packet["ask"] = s.ask_before.into();
+        self.send_to_core(&packet);
+        *self.sent_setup.borrow_mut() = Some((setup, s.ask_before));
     }
 
     // -------------------------------------------------------------------------------------- layout
@@ -736,11 +758,8 @@ impl Home {
             }
             ShareState::Sharing => {
                 self.share.stack.set_visible_child_name("sharing");
-                if lan {
-                    self.share.set_badge(tr("on the same network"), "blue");
-                } else {
-                    self.share.set_badge(tr("via Cloudflare"), "teal");
-                }
+                let route = self.win().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
+                self.share.set_badge(route, if lan { "blue" } else { "teal" });
                 self.tick();
             }
             ShareState::NoInternet => {
@@ -790,9 +809,17 @@ impl Home {
         let mut args = vec!["serve".to_string()];
         if lan {
             args.extend(["--no-tunnel".into(), "--lan".into()]);
+        } else if s.network == "server" {
+            // through the own server: no tunnel; the core registers there and the id is the code
+            args.push("--no-tunnel".into());
         }
         if s.ask_before {
             args.push("--ask".into());
+        }
+        args.push("--setup-stdin".into());
+        let setup = crate::access::current_setup(&s);
+        if setup.record_dir.is_some() {
+            crate::access::prune_recordings(&crate::access::recordings_dir(), std::time::SystemTime::now(), crate::access::KEEP_RECORDINGS_DAYS);
         }
         *self.info.borrow_mut() = ShareInfo { lan, ..Default::default() };
         self.core_answered.set(false);
@@ -803,6 +830,10 @@ impl Home {
             }
         }) {
             Ok(c) => {
+                let mut packet = serde_json::to_value(&setup).unwrap_or_default();
+                packet["cmd"] = "setup".into();
+                c.send(&packet);
+                *self.sent_setup.borrow_mut() = Some((setup.clone(), s.ask_before));
                 *self.core.borrow_mut() = Some(c);
                 self.share.opening_step.set_text(if lan {
                     tr("starting the direct connection on this network")
@@ -894,6 +925,20 @@ impl Home {
                     self.core_failed(why);
                     return;
                 }
+                if ours && *self.state.borrow() == ShareState::Sharing {
+                    // the core stopped while sharing (a setup it could not apply, a crash): the same clean-up as
+                    // stopping, and the owner is told why
+                    if let Some(i) = self.incoming.borrow_mut().take() {
+                        i.close_all();
+                    }
+                    let why = if exit.last_error.is_empty() {
+                        trf("It exited with code {code}.", &[("code", exit.code.map_or("?".into(), |c| c.to_string()))])
+                    } else {
+                        exit.last_error
+                    };
+                    self.core_failed(why);
+                    return;
+                }
                 if matches!(*self.state.borrow(), ShareState::Sharing | ShareState::Opening) {
                     self.set_state(ShareState::Idle);
                 }
@@ -908,7 +953,13 @@ impl Home {
                 i.code = s("code");
                 i.password = s("password");
                 i.addr = s("addr");
-                if i.lan {
+                if v["server"].as_bool() == Some(true) {
+                    // shared through the own server: the RustDesk id is what to pass on, with the server's address
+                    i.code = s("id");
+                    i.link = w_server_text(&self.win());
+                    drop(i);
+                    self.begin_shared();
+                } else if i.lan {
                     let port = i.addr.rsplit(':').next().unwrap_or("21118").to_owned();
                     let ip = local_ip().unwrap_or_else(|| "127.0.0.1".into());
                     let inv = kalango_remote_proto::Invite {
@@ -947,6 +998,25 @@ impl Home {
                     c.stop();
                 }
                 self.set_state(if offline { ShareState::NoInternet } else { ShareState::Failed(text) });
+            }
+            "error" if v["kind"] == "setup" => {
+                if let Some(w) = self.win() {
+                    w.toast(&trf("Sharing could not use the settings: {why}", &[("why", s("text"))]));
+                }
+            }
+            // wrong passwords or codes locked the whole share for a while: the owner is told when it ends
+            "lockout" if v["secs"].as_u64().unwrap_or(0) > 0 => {
+                let until = glib::DateTime::now_local()
+                    .and_then(|d| d.add_seconds(v["secs"].as_f64().unwrap_or(0.0)))
+                    .ok()
+                    .and_then(|d| d.format("%H:%M").ok())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let text = trf("Locked until {time} after {n} wrong attempts", &[("time", until), ("n", v["failures"].as_u64().unwrap_or(0).to_string())]);
+                eprintln!("kalango-remote: {text}");
+                if let Some(w) = self.win() {
+                    w.toast(&text);
+                }
             }
             "password" => {
                 self.info.borrow_mut().password = s("password");
@@ -1235,6 +1305,11 @@ impl Home {
             }
         }
     }
+}
+
+/// What the share card shows under the id when sharing through the own server: its address.
+fn w_server_text(win: &Option<Rc<Window>>) -> String {
+    win.as_ref().map(|w| w.settings.borrow().server_id.trim().to_owned()).unwrap_or_default()
 }
 
 fn unreachable_home() -> Rc<Home> {

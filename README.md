@@ -45,8 +45,17 @@ Em desenvolvimento, já usável entre dois computadores Linux. O que funciona e 
   conferida antes de conectar (chave trocada é bloqueada), encaminhamentos de porta. As sessões abrem no Terminal do
   KalangoOS (contrato em [`docs/HOSTS.md`](docs/HOSTS.md); teste com `kalangoos/scripts/testar-ssh.sh`).
 
-Ainda não: compartilhar por servidor próprio, verificação em duas etapas, gravar sessões e o modo privacidade.
-Não testado: o niri numa sessão de verdade (só aninhado) e dois computadores físicos.
+- **Acesso sem supervisão** (senha fixa, que entra sem aprovação enquanto a de uso único continua pedindo),
+  **verificação em duas etapas** (código do app autenticador, com QR code), **gravar as sessões** (recebidas e feitas,
+  em Vídeos › Kalango Remote, apagadas depois de 30 dias) e **travar a tela** ao fim da sessão.
+- **Servidor próprio** (RustDesk-compatível): o computador se registra nele, o cartão mostra o id e quem conecta digita o
+  id. Testado com o hbbs/hbbr oficiais (`kalangoos/scripts/testar-sessao.sh servidor`).
+- **O plano do agente**: `kalango-remote agent-plan ARQUIVO|-` mostra o plano para aprovação e responde com a decisão
+  (contrato em `kalangoos/app/src/plan.rs`; teste em `kalangoos/scripts/testar-plano.sh`).
+
+Ainda não: o modo privacidade (tela preta só aqui) — a captura por `wlr-screencopy` pegaria a cobertura e o outro lado
+veria preto; precisa de apoio do compositor do KalangoOS. Não testado: o niri numa sessão de verdade (só aninhado) e dois
+computadores físicos.
 
 ### Compilar e rodar (Ubuntu 24.04, sem sudo)
 

@@ -118,6 +118,9 @@ impl Incoming {
                 }
                 if let Some(a) = ended {
                     crate::shell_sound::play("kalango-remote-stop");
+                    if self.active.borrow().is_empty() && Window::get().is_some_and(|w| w.settings.borrow().lock_after) {
+                        crate::access::lock_screen();
+                    }
                     a.banner.destroy();
                     if let Some(o) = a.outline {
                         o.destroy();
@@ -177,7 +180,8 @@ impl Incoming {
         ht.set_hexpand(true);
         head.append(&ht);
         let lan = Window::get().is_some_and(|w| w.settings.borrow().network == "lan");
-        head.append(&ui::badge(if lan { tr("on the same network") } else { tr("via Cloudflare") }, if lan { "blue" } else { "teal" }).0);
+        let route = Window::get().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
+        head.append(&ui::badge(route, if lan { "blue" } else { "teal" }).0);
         root.append(&head);
         let who = ui::hbox(12, "kr-who");
         let avatar = ui::label(&name.chars().next().unwrap_or('?').to_uppercase().to_string(), "kr-avatar");
@@ -331,6 +335,22 @@ impl Incoming {
         row.append(&dot);
         let what = if keyboard { trf("{who} is controlling this computer", &[("who", name.clone())]) } else { trf("{who} is viewing this computer", &[("who", name.clone())]) };
         row.append(&ui::label(&what, "kr-row-title"));
+        let unattended = v["unattended"].as_bool().unwrap_or(false);
+        let st = Window::get().map(|w| w.settings.borrow().clone()).unwrap_or_default();
+        if unattended {
+            // what the fixed password lets in, so nobody is surprised by what it can do
+            let mut allowed = vec![tr("screen").to_owned(), tr("keyboard and mouse").to_owned()];
+            if st.clipboard {
+                allowed.push(tr("clipboard").to_owned());
+            }
+            if st.audio {
+                allowed.push(tr("audio").to_owned());
+            }
+            row.append(&ui::badge(&trf("unattended · {allowed}; no files, terminal or tunnels", &[("allowed", allowed.join(", "))]), "gold").0);
+        }
+        if st.record {
+            row.append(&ui::badge(tr("recording"), "coral").0);
+        }
         let label = ui::label("", "kr-caption");
         row.append(&label);
         row.append(&ui::hbox(0, "kr-vdiv").tap_size(1, 18));
@@ -386,7 +406,7 @@ impl Incoming {
         // the clock in the banner
         let lw = label.clone();
         let started = Instant::now();
-        let route = if Window::get().is_some_and(|w| w.settings.borrow().network == "lan") { tr("on the same network") } else { tr("via Cloudflare") };
+        let route = Window::get().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
         glib::timeout_add_seconds_local(1, move || {
             if lw.root().is_none() {
                 return glib::ControlFlow::Break;

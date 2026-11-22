@@ -5,6 +5,9 @@
 //! commands, raw frames for video.
 
 pub mod invite;
+pub mod lockout;
+pub mod setup;
+pub mod totp;
 pub mod wire;
 
 pub use invite::{code_for, Invite, InviteError, Target};

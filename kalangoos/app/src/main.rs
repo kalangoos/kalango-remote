@@ -5,14 +5,18 @@
 //!   kalango-remote --page ssh|settings  opening on a page (also for tests and captures)
 //!   kalango-remote end-sessions         ends the sessions going on in the running app (KalangoOS's niri runs it
 //!                                       on Esc Esc while someone is connected)
+//!   kalango-remote agent-plan FILE|-    shows the agent's plan for approval and answers with the decision (plan.rs)
 //!   kalango-remote ssh-command HOST-ID  the command that opens a saved SSH server, as a JSON array
 //!                                       (for KalangoOS's Terminal; docs/HOSTS.md)
 
+mod access;
 mod core;
 mod home;
 mod i18n;
 mod incoming;
 mod kalangod;
+mod plan;
+mod plan_panel;
 mod secrets;
 mod session;
 mod settings;
@@ -89,6 +93,9 @@ fn main() -> glib::ExitCode {
                 h.end_sessions();
             }
             return 0;
+        }
+        if args.first().map(String::as_str) == Some("agent-plan") {
+            return window::agent_plan(app, cmd, args.get(1).map(String::as_str));
         }
         let page = args.iter().position(|a| a == "--page").and_then(|i| args.get(i + 1)).cloned();
         let w = window::Window::get_or_create(app);

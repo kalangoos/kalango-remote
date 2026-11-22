@@ -4595,6 +4595,7 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "base64 0.22.1",
+ "gio 0.20.12",
  "gtk4",
  "gtk4-layer-shell",
  "hmac",
@@ -4625,8 +4626,10 @@ dependencies = [
 name = "kalango-remote-proto"
 version = "0.1.0"
 dependencies = [
+ "hmac",
  "serde 1.0.228",
  "serde_json 1.0.118",
+ "sha1",
  "sha2",
 ]
 

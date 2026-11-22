@@ -736,11 +736,8 @@ impl Home {
             }
             ShareState::Sharing => {
                 self.share.stack.set_visible_child_name("sharing");
-                if lan {
-                    self.share.set_badge(tr("on the same network"), "blue");
-                } else {
-                    self.share.set_badge(tr("via Cloudflare"), "teal");
-                }
+                let route = self.win().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
+                self.share.set_badge(route, if lan { "blue" } else { "teal" });
                 self.tick();
             }
             ShareState::NoInternet => {
@@ -790,6 +787,9 @@ impl Home {
         let mut args = vec!["serve".to_string()];
         if lan {
             args.extend(["--no-tunnel".into(), "--lan".into()]);
+        } else if s.network == "server" && !s.server_id.trim().is_empty() {
+            // through the own server: no tunnel; the core registers there and the id is the code
+            args.push("--no-tunnel".into());
         }
         if s.ask_before {
             args.push("--ask".into());
@@ -916,7 +916,13 @@ impl Home {
                 i.code = s("code");
                 i.password = s("password");
                 i.addr = s("addr");
-                if i.lan {
+                if v["server"].as_bool() == Some(true) {
+                    // shared through the own server: the RustDesk id is what to pass on, with the server's address
+                    i.code = s("id");
+                    i.link = w_server_text(&self.win());
+                    drop(i);
+                    self.begin_shared();
+                } else if i.lan {
                     let port = i.addr.rsplit(':').next().unwrap_or("21118").to_owned();
                     let ip = local_ip().unwrap_or_else(|| "127.0.0.1".into());
                     let inv = kalango_remote_proto::Invite {
@@ -1243,6 +1249,11 @@ impl Home {
             }
         }
     }
+}
+
+/// What the share card shows under the id when sharing through the own server: its address.
+fn w_server_text(win: &Option<Rc<Window>>) -> String {
+    win.as_ref().map(|w| w.settings.borrow().server_id.trim().to_owned()).unwrap_or_default()
 }
 
 fn unreachable_home() -> Rc<Home> {

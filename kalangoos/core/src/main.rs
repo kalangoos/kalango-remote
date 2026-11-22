@@ -8,7 +8,7 @@
 //!       removed, chat. Commands (JSON packets on stdin): authorize, close, chat, new_password.
 //!       --setup-stdin: the first packet on stdin is a `kalango_remote_proto::setup::Setup` (fixed password for
 //!       unattended access, one-time password length, two-step secret, recording folder, own server).
-//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files] [--record-dir DIR]
+//!   kalango-remote-core session <link|code|host:port> --password PW [--view-only|--files] [--record-dir DIR] [--server HOST [--relay R] [--key K]]
 //!       Control another computer. Events and frames on stdout; commands (mouse, key, text, chat,
 //!       quality, close) on stdin. Ends when stdin closes.
 //!   kalango-remote-core probe <link|code|host:port> --password PW [--frames N] [--save F.png] [--2fa CODE]
@@ -206,10 +206,13 @@ fn serve(args: &[String]) -> i32 {
         emit(&out, json!({"event": "error", "text": "the server did not start"}));
         return 1;
     };
+    if setup.server.is_some() {
+        std::thread::spawn(kalango::direct::run_rendezvous);
+    }
     emit(
         &out,
         json!({
-            "event": "listening", "addr": bound.to_string(), "id": id, "code": code,
+            "event": "listening", "addr": bound.to_string(), "id": id, "code": code, "server": setup.server.is_some(),
             "pk": kalango_remote_proto::invite::b64url_encode(&pk),
             "password": password_security::temporary_password(),
         }),
@@ -321,6 +324,8 @@ fn resolve(target: &str, out: &Out) -> Result<(String, bool), String> {
                 None => Err("code_not_found".into()),
             }
         }
+        // through the own server (the options were set at start): RustDesk's rendezvous does the rest
+        Target::Id(id) => Ok((id, false)),
         Target::Invite(inv) => {
             let addr = if inv.is_tunnel() {
                 emit(out, json!({"event": "step", "step": "tunnel", "host": inv.host}));
@@ -354,6 +359,12 @@ fn client(args: &[String], probe: bool) -> i32 {
     let password = arg_value(args, "--password").unwrap_or_default();
     if let Some(dir) = arg_value(args, "--record-dir") {
         set_video_dir(&dir);
+    }
+    // the own server only for a session that asks for it; the others never talk to a rendezvous server
+    let server = arg_value(args, "--server").unwrap_or_default();
+    let (relay, key) = if server.is_empty() { Default::default() } else { (arg_value(args, "--relay").unwrap_or_default(), arg_value(args, "--key").unwrap_or_default()) };
+    for (k, v) in [("custom-rendezvous-server", server), ("relay-server", relay), ("key", key)] {
+        Config::set_option(k.into(), v);
     }
     let kind = if args.iter().any(|a| a == "--files") {
         session::Kind::Files

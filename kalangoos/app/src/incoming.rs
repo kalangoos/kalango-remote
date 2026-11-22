@@ -180,7 +180,8 @@ impl Incoming {
         ht.set_hexpand(true);
         head.append(&ht);
         let lan = Window::get().is_some_and(|w| w.settings.borrow().network == "lan");
-        head.append(&ui::badge(if lan { tr("on the same network") } else { tr("via Cloudflare") }, if lan { "blue" } else { "teal" }).0);
+        let route = Window::get().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
+        head.append(&ui::badge(route, if lan { "blue" } else { "teal" }).0);
         root.append(&head);
         let who = ui::hbox(12, "kr-who");
         let avatar = ui::label(&name.chars().next().unwrap_or('?').to_uppercase().to_string(), "kr-avatar");
@@ -389,7 +390,7 @@ impl Incoming {
         // the clock in the banner
         let lw = label.clone();
         let started = Instant::now();
-        let route = if Window::get().is_some_and(|w| w.settings.borrow().network == "lan") { tr("on the same network") } else { tr("via Cloudflare") };
+        let route = Window::get().map(|w| w.settings.borrow().route_text()).unwrap_or(tr("via Cloudflare"));
         glib::timeout_add_seconds_local(1, move || {
             if lw.root().is_none() {
                 return glib::ControlFlow::Break;

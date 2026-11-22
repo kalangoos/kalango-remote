@@ -12,6 +12,8 @@
 #     fixa    acesso sem supervisão: o servidor pede aprovação (--ask), mas a senha fixa entra sem ninguém aprovar
 #     duasetapas  verificação em duas etapas: sem o código do app autenticador a sessão não abre; com ele, abre
 #     gravar  o servidor grava a sessão que recebe numa pasta própria; o teste confere o arquivo de vídeo
+#     servidor  servidor próprio: sobe o hbbs/hbbr oficiais num docker (rustdesk/rustdesk-server, rede do host), o
+#             núcleo compartilha registrando nele e o probe conecta pelo id e pela chave pública do servidor
 #     impostor  o convite traz outra chave: a sessão tem de ser recusada (sai 0 se foi)
 # O lado compartilhado captura o DISPLAY dado (um Xvfb, padrão :89). Sai 0 se o probe recebeu quadros
 # numa sessão cifrada de ponta a ponta. MOVIMENTO=1 anima a tela; QUADROS=N (padrão 30).
@@ -51,6 +53,15 @@ case "$MODO" in
     SEGREDO=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ   # 20 bytes ("12345678901234567890"); o núcleo exige 128 bits ou mais
     SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"two_factor\":\"$SEGREDO\"}"
     QUADROS=1 ;;
+  servidor) ARGS=(--no-tunnel --setup-stdin)
+    command -v docker > /dev/null || { echo "precisa do docker (rustdesk/rustdesk-server)"; exit 2; }
+    HB=$T/hbbs; mkdir -p "$HB"
+    docker run -d --name "kr-teste-hbbr-$$" --network host -v "$HB:/root" rustdesk/rustdesk-server hbbr > /dev/null
+    docker run -d --name "kr-teste-hbbs-$$" --network host -v "$HB:/root" rustdesk/rustdesk-server hbbs -r 127.0.0.1:21117 > /dev/null
+    for _ in $(seq 20); do [ -s "$HB/id_ed25519.pub" ] && break; sleep 0.5; done
+    CHAVE=$(cat "$HB/id_ed25519.pub")
+    SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"server\":{\"id\":\"127.0.0.1\",\"relay\":\"\",\"key\":\"$CHAVE\"}}"
+    QUADROS=1 ;;
   gravar) ARGS=(--no-tunnel --setup-stdin)
     SETUP="{\"cmd\":\"setup\",\"otp_length\":6,\"record_dir\":\"$T/srv/Vídeos/Kalango Remote\"}"
     MOVIMENTO=1 ;;
@@ -66,7 +77,7 @@ lado srv "$B" serve "${ARGS[@]}" < "$T/entrada" > "$T/serve.out" 2> "$T/serve.er
 SP=$!
 exec 3> "$T/entrada"   # mantém a entrada do servidor aberta
 [ -n "${SETUP:-}" ] && echo "$SETUP" >&3   # --setup-stdin: o primeiro pacote é a configuração
-trap 'exec 3>&-; kill $SP ${GP:-} ${JP:-} 2>/dev/null; wait $SP 2>/dev/null; echo "registros em $T"' EXIT
+trap 'exec 3>&-; [ "$MODO" = servidor ] && docker rm -f "kr-teste-hbbs-$$" "kr-teste-hbbr-$$" > /dev/null 2>&1; kill $SP ${GP:-} ${JP:-} 2>/dev/null; wait $SP 2>/dev/null; echo "registros em $T"' EXIT
 campo() { python3 -c "import json,sys
 for l in open('$T/serve.out'):
     d=json.loads(l)
@@ -81,6 +92,7 @@ case "$MODO" in
     ( for _ in $(seq 60); do grep -q '"event":"connection"' "$T/serve.out" && break; sleep 0.5; done
       sleep 3; CID=$(campo connection id); date +%s.%N > "$T/aprovado-em"
       echo "{\"cmd\":\"authorize\",\"id\":$CID,\"keyboard\":true,\"clipboard\":true,\"audio\":false,\"file\":false}" >&3 ) & ;;
+  servidor) ALVO=$ID; PROBE_EXTRA=(--server 127.0.0.1 --key "$CHAVE"); sleep 4 ;;   # espera o registro no servidor
   fixa|duasetapas|gravar) ALVO="https://$ADDR/#k=$ID.$PK" ;;
   impostor) ALVO="https://$ADDR/#k=$ID.$(python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('='))")" ;;
   tunel)

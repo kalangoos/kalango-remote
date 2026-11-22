@@ -204,7 +204,7 @@ impl SettingsPage {
         let id_srv = field(tr("ID server  ·  e.g. remote.mycompany.com"), &s.server_id);
         let relay = field(tr("Relay server (optional)"), &s.server_relay);
         let key = field(tr("Server public key"), &s.server_key);
-        fields.append(&ui::para(tr("Sharing through an own server is not in this version yet; connecting to it works with RustDesk's address format."), "kr-note"));
+        fields.append(&ui::para(tr("Sharing then shows this computer's id instead of a link; connect to others by their id. Restart the share after changing it."), "kr-note"));
         c3.append(&fields);
         net.append(&c1);
         net.append(&c2);

@@ -112,6 +112,15 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// How the connections of a share arrive, for the badges and banners.
+    pub fn route_text(&self) -> &'static str {
+        match self.network.as_str() {
+            "lan" => tr("on the same network"),
+            "server" if !self.server_id.trim().is_empty() => tr("via your server"),
+            _ => tr("via Cloudflare"),
+        }
+    }
+
     pub fn load() -> Settings {
         read("settings.json")
     }

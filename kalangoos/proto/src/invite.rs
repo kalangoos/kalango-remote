@@ -27,6 +27,8 @@ pub enum Target {
     Invite(Invite),
     /// A share code (normalized `XXXX-XXXX`), resolved on the local network.
     Code(String),
+    /// A RustDesk id (9 or 10 digits): reached through the person's own server (Settings › Network).
+    Id(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,6 +157,10 @@ impl Target {
         if let Some(code) = normalize_code(input) {
             return Ok(Target::Code(code));
         }
+        let digits: String = input.chars().filter(|c| !matches!(c, ' ' | '-')).collect();
+        if (9..=10).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()) {
+            return Ok(Target::Id(digits));
+        }
         Invite::parse(input).map(Target::Invite)
     }
 }
@@ -186,6 +192,14 @@ mod tests {
         assert_eq!(Invite::parse("hello"), Err(InviteError::NotALink));
         assert_eq!(Invite::parse("https://a.b/#k=1.@@"), Err(InviteError::BadIdentity));
         assert_eq!(Invite::parse("https://a.b/#k=1.AAAA"), Err(InviteError::BadIdentity), "key must be 32 bytes");
+    }
+
+    #[test]
+    fn a_rustdesk_id_is_its_own_kind_of_target() {
+        assert_eq!(Target::parse("123 456 789").unwrap(), Target::Id("123456789".into()));
+        assert_eq!(Target::parse("1234567890").unwrap(), Target::Id("1234567890".into()));
+        assert!(matches!(Target::parse("12345678").unwrap(), Target::Code(_)), "8 characters stay a share code");
+        assert!(Target::parse("12345678901").is_err());
     }
 
     #[test]

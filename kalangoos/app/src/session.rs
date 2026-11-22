@@ -142,6 +142,15 @@ impl Session {
             Kind::Files => args.push("--files".into()),
             Kind::Control => {}
         }
+        if matches!(kalango_remote_proto::Target::parse(&self.target), Ok(kalango_remote_proto::Target::Id(_))) {
+            // a RustDesk id is reached through the own server of Settings › Network
+            let s = self.main.upgrade().map(|w| w.settings.borrow().clone()).unwrap_or_default();
+            if s.server_id.trim().is_empty() {
+                (self.on_event)(ConnectEvent::Failed(tr("Set your own server in Settings › Network to connect by id.").to_owned()));
+                return;
+            }
+            args.extend(["--server".into(), s.server_id.trim().to_owned(), "--relay".into(), s.server_relay.trim().to_owned(), "--key".into(), s.server_key.trim().to_owned()]);
+        }
         if self.auto_record() {
             args.extend(["--record-dir".into(), crate::access::recordings_dir().to_string_lossy().into_owned()]);
         }
@@ -343,6 +352,7 @@ impl Session {
         let code = match kalango_remote_proto::Target::parse(&self.target) {
             Ok(kalango_remote_proto::Target::Invite(i)) => i.code().unwrap_or_default(),
             Ok(kalango_remote_proto::Target::Code(c)) => c,
+            Ok(kalango_remote_proto::Target::Id(_)) => String::new(),
             Err(_) => String::new(),
         };
         w.peers.borrow_mut().remember(Peer {

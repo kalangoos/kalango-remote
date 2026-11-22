@@ -76,7 +76,12 @@ sessao() { # $1 = privacidade ligada (1/0): abre o app com o perfil sob medida, 
   printf 'senha-fixa-privacidade-1' > "$P/config/kalango/remote/cofre-de-teste/fixed-password--default"; chmod 600 "$P/config/kalango/remote/cofre-de-teste/fixed-password--default"
   NIRI_SOCKET="$NS" KALANGO_REMOTE_NIRI="$N" KALANGOD_SOCKET="$T/mcp.sock" KALANGO_REMOTE_DEMO="$P" KALANGO_REMOTE_DEBUG=senha KALANGO_REMOTE_INSTANCE="priv$1$$" setsid kalangoos/scripts/rodar-app.sh --demo > "$T/app$1.log" 2>&1 &
   APID=$!
-  sleep 5
+  # (espera a janela do app aparecer no niri: com a máquina ocupada ele demora)
+  for _ in $(seq 40); do
+    NIRI_SOCKET=$NS "$N" msg -j windows 2>/dev/null | python3 -c "import json,sys; sys.exit(0 if any(w['app_id'].startswith('os.kalango.Remote') for w in json.load(sys.stdin)) else 1)" && break
+    sleep 1
+  done
+  sleep 2
   X windowfocus --sync "$(X search --name '^niri$' | head -1)"
   # (a janela com 1500 px de largura, como em testar-app.sh: os pontos de clique valem para ela)
   NIRI_SOCKET=$NS "$N" msg action set-column-width 1500; NIRI_SOCKET=$NS "$N" msg action center-column; sleep 1.5

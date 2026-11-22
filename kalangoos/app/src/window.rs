@@ -298,7 +298,9 @@ impl Window {
         // and it then tells the person nothing was done: a click that came later must not connect anyway)
         let weak_panel = Rc::downgrade(&panel);
         let me = Rc::downgrade(self);
-        glib::timeout_add_seconds_local_once(crate::plan::DECIDE_WITHIN_SECS, move || {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let delay = crate::plan::panel_delay_secs(plan.deadline, now) as u32;
+        glib::timeout_add_seconds_local_once(delay, move || {
             let (Some(w), Some(panel)) = (me.upgrade(), weak_panel.upgrade()) else { return };
             let pending = w.plan.borrow().as_ref().is_some_and(|current| Rc::ptr_eq(current, &panel));
             if pending {

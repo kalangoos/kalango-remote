@@ -169,7 +169,8 @@ mod tests {
             // a second network that is not on the default route: the case the limited broadcast never reached
             nic("enp0s5", "192.168.77.1", "255.255.255.0", up),
             nic("lo", "127.0.0.1", "255.0.0.0", libc::IFF_UP | libc::IFF_LOOPBACK),
-            nic("wg0", "10.9.0.2", "255.255.255.0", libc::IFF_UP | libc::IFF_POINTOPOINT),
+            // (a point-to-point link may carry the broadcast flag too: it is skipped for being point to point)
+            nic("wg0", "10.9.0.2", "255.255.255.0", libc::IFF_UP | libc::IFF_BROADCAST | libc::IFF_POINTOPOINT),
             nic("eth9", "172.16.0.5", "255.255.255.0", libc::IFF_BROADCAST),
             nic("p2p", "10.1.1.1", "255.255.255.254", up),
             nic("host", "10.2.2.2", "255.255.255.255", up),

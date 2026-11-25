@@ -630,6 +630,15 @@ mod harden_tests {
         assert_eq!(std::fs::metadata("/proc/self/status").map(|m| m.uid()).ok(), Some(0));
         assert!(std::fs::read("/proc/self/environ").is_err() || nix_is_root());
     }
+
+    // the first thing `main` does is `harden_self()`: nothing starts, reads input or opens a socket before that
+    #[test]
+    fn main_hardens_the_process_first() {
+        let src = include_str!("main.rs");
+        let body = &src[src.find("fn main() {").unwrap() + "fn main() {".len()..];
+        let first = body.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("//")).unwrap_or("");
+        assert_eq!(first, "harden_self();", "harden_self() must be the first statement of main");
+    }
     fn nix_is_root() -> bool {
         // SAFETY: getuid has no preconditions.
         unsafe { libc::getuid() == 0 }

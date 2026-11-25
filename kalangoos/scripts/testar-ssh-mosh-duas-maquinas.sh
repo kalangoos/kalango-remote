@@ -22,14 +22,16 @@ for lado in "$KALANGO_SSH_A" "$KALANGO_SSH_B"; do
 done
 A() { $KALANGO_SSH_A "export LD_LIBRARY_PATH=/usr/lib/kalango/remote HOME=$T/home XDG_CONFIG_HOME=$T/config XDG_CACHE_HOME=$T/cache XDG_RUNTIME_DIR=$T/run KALANGO_REMOTE_COFRE=arquivo; $*"; }
 Bm() { $KALANGO_SSH_B "$*"; }
-Bm "mkdir -m 700 -p $T"; A "mkdir -p $T/home/.ssh $T/config $T/run; chmod 700 $T/home/.ssh $T/run; ssh-keygen -q -t ed25519 -N '' -C teste@kalango -f $T/home/.ssh/teste_ed25519"
+Bm "mkdir -m 700 -p $T"; A "mkdir -m 700 -p $T; mkdir -p $T/home/.ssh $T/config $T/run; chmod 700 $T/home/.ssh $T/run $T/config; ssh-keygen -q -t ed25519 -N '' -C teste@kalango -f $T/home/.ssh/teste_ed25519"
 PUB=$(A "cat $T/home/.ssh/teste_ed25519.pub")
 Bm "mkdir -p ~/.ssh; chmod 700 ~/.ssh; echo '$PUB' >> ~/.ssh/authorized_keys; systemctl is-active ssh > /dev/null || sudo systemctl start ssh"
+LAN_IF=$(Bm "ip -o -4 addr show | awk '\$4 ~ /^${KALANGO_IP_B//./\\.}\\// {print \$2}' | head -1")
+[ -n "$LAN_IF" ] || { echo "RECUSADO: não achei a placa da B com $KALANGO_IP_B"; exit 2; }
 FP0=$(Bm "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub | cut -d' ' -f2")   # (a impressão original da chave de host da B)
 # ao sair: a chave de host original volta do .bak, a placa volta, a chave de teste sai do authorized_keys
 limpar() {
-  Bm "sudo ip link set enp0s5 up 2> /dev/null; if [ -f /etc/ssh/ssh_host_ed25519_key.bak ]; then sudo cp -p /etc/ssh/ssh_host_ed25519_key.bak /etc/ssh/ssh_host_ed25519_key; sudo cp -p /etc/ssh/ssh_host_ed25519_key.pub.bak /etc/ssh/ssh_host_ed25519_key.pub; sudo rm -f /etc/ssh/ssh_host_ed25519_key.bak /etc/ssh/ssh_host_ed25519_key.pub.bak; sudo systemctl restart ssh; fi; sed -i '/teste@kalango/d' ~/.ssh/authorized_keys; rm -rf $T"
-  A "rm -rf $T"
+  Bm "sudo ip link set $LAN_IF up 2> /dev/null; if [ -f /etc/ssh/ssh_host_ed25519_key.bak ]; then sudo cp -p /etc/ssh/ssh_host_ed25519_key.bak /etc/ssh/ssh_host_ed25519_key; sudo cp -p /etc/ssh/ssh_host_ed25519_key.pub.bak /etc/ssh/ssh_host_ed25519_key.pub; sudo rm -f /etc/ssh/ssh_host_ed25519_key.bak /etc/ssh/ssh_host_ed25519_key.pub.bak; sudo systemctl restart ssh; fi; sed -i '/teste@kalango/d' ~/.ssh/authorized_keys; rm -rf $T"
+  A "rm -rf $T"; rm -rf "$T"
   local fp1; fp1=$(Bm "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub | cut -d' ' -f2")
   if [ "$FP0" = "$fp1" ]; then echo "(chave de host da B restaurada: $fp1, igual à original; rede da B no ar; pastas do teste apagadas)"
   else echo "ERRO: a chave de host da B NÃO voltou ao que era ($FP0 -> $fp1)"; fi
@@ -113,7 +115,7 @@ sys.exit(0 if g[0] >= 7.5 else 1)
 EOS
 A "APP=$APP T=$T setsid bash $T/mosh-run.sh < /dev/null > /dev/null 2>&1 &"
 sleep 7
-Bm "sudo ip link set enp0s5 down"; echo "   (rede da B caída)"; sleep 8; Bm "sudo ip link set enp0s5 up; sleep 1; sudo nmcli con up lan > /dev/null 2>&1"; echo "   (rede da B de volta)"
+Bm "sudo ip link set $LAN_IF down"; echo "   (rede da B caída)"; sleep 8; Bm "sudo ip link set $LAN_IF up; sleep 1; sudo nmcli con up lan > /dev/null 2>&1"; echo "   (rede da B de volta)"
 for _ in $(seq 40); do A "grep -aq FIM-MOSH-42 $T/mosh.log 2> /dev/null" && break; sleep 1; done
 A "grep -aq FIM-MOSH-42 $T/mosh.log" || { A "tail -c 700 $T/mosh.log | tr -d \"\\033\" | tail -12"; falhou "o Mosh não terminou a contagem depois da rede voltar"; }
 A "python3 $T/mosh-gaps.py $T/mosh.log $T/mosh.tim" || { A "grep -c . $T/mosh.tim; awk '\$1==\"O\"' $T/mosh.tim | head -40 | tr '\n' ';'"; falhou "não houve um intervalo de pelo menos 7,5 s sem a A receber nada (a queda não aconteceu ou o Mosh não a mostrou)"; }

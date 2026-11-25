@@ -94,6 +94,8 @@ case "$MODO" in
 esac
 # (entre duas máquinas, o servidor escuta na rede em vez de só no loopback; o túnel e o código já são assim)
 [ -n "${MAQUINAS:-}" ] && [ "$MODO" != tunel ] && [ "$MODO" != codigo ] && ARGS+=(--lan --port 0)
+# roda no lado compartilhado (a B entre duas máquinas), com cada argumento escapado para os dois shells
+onsrv() { if [ -n "${MAQUINAS:-}" ]; then $KALANGO_SSH_B "$(printf '%q ' "$@")"; else "$@"; fi; }
 mkfifo "$T/entrada"
 # MOVIMENTO=1: uma bola animada a 30 qps na tela compartilhada (o RustDesk só manda quadros quando algo muda)
 if [ "${MOVIMENTO:-0}" = 1 ]; then
@@ -138,6 +140,11 @@ case "$MODO" in
     ALVO=$(campo tunnel link) ;;   # o núcleo só anuncia o link quando o nome já resolve
 esac
 echo "alvo: $ALVO  código: $CODE"
+# o núcleo se protege de depuradores do mesmo usuário (prctl PR_SET_DUMPABLE 0): o kalangod só dá a tela a quem fez isso,
+# e os arquivos de /proc/<pid> de um processo assim são do root
+CPID=$(onsrv pgrep -n -f "[k]alango-remote-core serve")
+if [ -n "$CPID" ] && [ "$(onsrv stat -c %u /proc/$CPID/status)" = 0 ]; then echo "ok: o núcleo ($CPID) não é depurável (/proc/$CPID/status é do root)"
+else echo "FALHOU: o núcleo ($CPID) continua depurável pelo mesmo usuário (falta o prctl PR_SET_DUMPABLE 0)"; exit 1; fi
 if [ "$MODO" = fixa ]; then
   # a senha de uso único, com "perguntar antes" ligado, continua esperando aprovação: nenhum quadro
   lado cli timeout 60 "$B" probe "$ALVO" --password "$PW" --frames 1 --timeout 8 > "$T/uso-unico.out" 2> "$T/uso-unico.err"
@@ -260,7 +267,6 @@ fi
 if [ "$MODO" = gravar ]; then
   sleep 2
   # (a gravação fica no lado compartilhado, que entre duas máquinas é a B: cada argumento é escapado para os dois shells)
-  onsrv() { if [ -n "${MAQUINAS:-}" ]; then $KALANGO_SSH_B "$(printf '%q ' "$@")"; else "$@"; fi; }
   DIRG="$T/srv/Vídeos/Kalango Remote"
   ARQ=$(onsrv find "$DIRG" -type f -size +1k | head -1)
   [ -n "$ARQ" ] || { echo "FALHOU: nenhum vídeo gravado em $DIRG"; onsrv ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1; }

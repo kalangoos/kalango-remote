@@ -79,7 +79,19 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
 }
 
+/// The first thing the process does: not dumpable. A dumpable process can be ptrace-attached by anything of the
+/// same user (Yama's ptrace_scope 1 only limits that to its ancestors) and its memory and environment read through
+/// /proc; kalangod, which gives this app and its core the screen, the keyboard and the privacy cover, refuses them
+/// unless they are out of that reach, and takes the permission back when they stop being.
+fn harden_self() {
+    // SAFETY: prctl(PR_SET_DUMPABLE, 0) only changes this process's own flag.
+    unsafe {
+        libc::prctl(libc::PR_SET_DUMPABLE, 0 as libc::c_ulong, 0 as libc::c_ulong, 0 as libc::c_ulong, 0 as libc::c_ulong);
+    }
+}
+
 fn main() {
+    harden_self();
     hbb_common::env_logger::Builder::from_env(hbb_common::env_logger::Env::default().default_filter_or("info"))
         .target(hbb_common::env_logger::Target::Stderr)
         .init();
@@ -605,5 +617,21 @@ fn run_probe(s: session::KalangoSession, rx: mpsc::Receiver<session::Event>, arg
     } else {
         let _ = writeln!(out.lock().unwrap(), "{}", json!({"probe": "timeout", "frames": n}));
         1
+    }
+}
+
+#[cfg(test)]
+mod harden_tests {
+    #[test]
+    fn the_process_stops_being_dumpable() {
+        use std::os::unix::fs::MetadataExt;
+        super::harden_self();
+        // the kernel makes the files of a non-dumpable process root's: how kalangod sees it from outside
+        assert_eq!(std::fs::metadata("/proc/self/status").map(|m| m.uid()).ok(), Some(0));
+        assert!(std::fs::read("/proc/self/environ").is_err() || nix_is_root());
+    }
+    fn nix_is_root() -> bool {
+        // SAFETY: getuid has no preconditions.
+        unsafe { libc::getuid() == 0 }
     }
 }

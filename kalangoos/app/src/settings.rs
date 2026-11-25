@@ -157,13 +157,17 @@ impl SettingsPage {
         fill_list();
         let fl = fill_list.clone();
         list.connect_map(move |_| fl());
-        dev.append(&bind_switch(ui::switch_row(tr("Accept only the devices on this list"), tr("The others cannot even ask")), s.allowed_only, &w, |s, v| s.allowed_only = v));
+        // (not wired to the core yet: shown as such, never as a protection that is on)
+        let only = bind_switch(ui::switch_row(tr("Accept only the devices on this list"), tr("Not active in this version yet")), s.allowed_only, &w, |s, v| s.allowed_only = v);
+        only.set_sensitive(false);
+        dev.append(&only);
         let ranges = ui::hbox(8, "kr-field");
         ranges.append(&ui::icon("rede-cabo", "k_muted", 16));
         let re = gtk::Entry::new();
         re.set_hexpand(true);
         re.set_text(&s.allowed_ranges);
-        re.set_placeholder_text(Some(tr("Addresses allowed on the local network (e.g. 192.168.0.0/24)")));
+        re.set_placeholder_text(Some(tr("Allowed addresses: not active in this version yet")));
+        re.set_sensitive(false);
         ranges.append(&re);
         let w2 = w.clone();
         re.connect_changed(move |e| {
@@ -274,12 +278,14 @@ impl SettingsPage {
             });
         }
         net.append(&bind_switch(
-            ui::switch_row(tr("Also accept connections on the same network"), tr("Opens a port on the local network while you share (Cloudflare mode), so the code is found there; only local addresses get in")),
+            ui::switch_row(tr("Also accept connections on the same network"), tr("Opens a port on the local network while you share (Cloudflare mode), so the code is found there; only local addresses get in (not Tailscale or other 100.64.0.0/10 addresses). Takes effect at the next share")),
             s.lan_too,
             &w,
             |s, v| s.lan_too = v,
         ));
-        net.append(&bind_switch(ui::switch_row(tr("Accept connection by IP address"), tr("Port 21118 · local network only")), s.accept_ip, &w, |s, v| s.accept_ip = v));
+        let by_ip = bind_switch(ui::switch_row(tr("Accept connection by IP address"), tr("Not active in this version yet")), s.accept_ip, &w, |s, v| s.accept_ip = v);
+        by_ip.set_sensitive(false);
+        net.append(&by_ip);
         let cf = ui::hbox(8, "");
         let status = cloudflared_status();
         cf.append(&ui::icon(if status.0 { "check" } else { "alerta" }, if status.0 { "k_teal" } else { "k_gold" }, 16));

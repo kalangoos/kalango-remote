@@ -81,6 +81,8 @@ pub struct Home {
     info: RefCell<ShareInfo>,
     core: RefCell<Option<Core>>,
     sent_setup: RefCell<Option<(kalango_remote_proto::setup::Setup, bool)>>,
+    /// whether the running share was started listening on the network (`--lan`): fixed until the next share
+    share_on_network: Cell<bool>,
     incoming: RefCell<Option<Rc<Incoming>>>,
     // connect
     target: gtk::Entry,
@@ -522,6 +524,7 @@ impl Home {
             info: RefCell::new(ShareInfo::default()),
             core: RefCell::new(None),
             sent_setup: RefCell::new(None),
+            share_on_network: Cell::new(false),
             incoming: RefCell::new(None),
             target,
             target_box,
@@ -696,7 +699,7 @@ impl Home {
             return;
         }
         let s = w.settings.borrow().clone();
-        let setup = crate::access::current_setup(&s);
+        let setup = crate::access::for_running_share(crate::access::current_setup(&s), self.share_on_network.get());
         if self.sent_setup.borrow().as_ref() == Some(&(setup.clone(), s.ask_before)) {
             return;
         }
@@ -816,6 +819,7 @@ impl Home {
         let s = w.settings.borrow().clone();
         let lan = s.network == "lan";
         let args = crate::access::serve_args(&s);
+        self.share_on_network.set(crate::access::listens_on_the_network(&s));
         let setup = crate::access::current_setup(&s);
         if setup.record_dir.is_some() {
             crate::access::prune_recordings(&crate::access::recordings_dir(), std::time::SystemTime::now(), crate::access::KEEP_RECORDINGS_DAYS);

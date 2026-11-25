@@ -37,8 +37,33 @@ pub struct Setup {
 }
 
 /// The source ranges a share that listens on the local network accepts: loopback (the tunnel connects from there),
-/// the private ranges (RFC 1918, IPv6 unique local) and link-local.
+/// the private ranges (RFC 1918, IPv6 unique local) and link-local. Not the carrier-grade NAT range (100.64.0.0/10, where
+/// Tailscale and mobile carriers put their addresses): those are not "the same network". The same list filters the code
+/// discovery (`is_lan_source`) and goes to the core as RustDesk's IP whitelist.
 pub const LAN_SOURCES: &str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,::1/128,fc00::/7,fe80::/10";
+
+/// One `address/prefix` entry of a range list, as numbers (IPv4 mapped into IPv6), or None when it is not valid.
+pub fn parse_range(entry: &str) -> Option<(u128, u32)> {
+    let (addr, prefix) = entry.trim().split_once('/')?;
+    let prefix: u32 = prefix.parse().ok()?;
+    match addr.parse::<std::net::IpAddr>().ok()? {
+        std::net::IpAddr::V4(a) if prefix <= 32 => Some((u128::from(a.to_ipv6_mapped()), prefix + 96)),
+        std::net::IpAddr::V6(a) if prefix <= 128 => Some((u128::from(a), prefix)),
+        _ => None,
+    }
+}
+
+/// Whether an address is in `LAN_SOURCES` (loopback, private or link-local).
+pub fn is_lan_source(ip: std::net::IpAddr) -> bool {
+    let n = match ip {
+        std::net::IpAddr::V4(a) => u128::from(a.to_ipv6_mapped()),
+        std::net::IpAddr::V6(a) => a.to_ipv4_mapped().map_or(u128::from(a), |m| u128::from(m.to_ipv6_mapped())),
+    };
+    LAN_SOURCES.split(',').filter_map(parse_range).any(|(net, prefix)| {
+        let mask = if prefix == 0 { 0 } else { u128::MAX << (128 - prefix) };
+        n & mask == net & mask
+    })
+}
 
 impl Setup {
     /// Refuses what cannot be honoured, so the core never runs with a protection silently off.
@@ -156,7 +181,26 @@ mod tests {
         for must in ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "fe80::/10", "fc00::/7"] {
             assert!(list.split(',').any(|r| r == must), "{must}");
         }
+        // every entry parses (address/prefix), and the carrier-grade NAT range (Tailscale) is not in
+        for r in list.split(',') {
+            assert!(parse_range(r).is_some(), "{r} is not address/prefix");
+            assert!(!r.starts_with("100."), "{r}: CGNAT/Tailscale is not the local network");
+        }
+        assert!(!list.split(',').any(|r| r == "100.64.0.0/10"));
         assert!(!list.split(",").any(|r| r == "0.0.0.0"), "0.0.0.0 in RustDesk's whitelist means everyone");
+    }
+
+    #[test]
+    fn local_sources_are_told_from_the_rest() {
+        let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
+        for local in ["127.0.0.1", "10.1.2.3", "172.16.0.9", "172.31.255.1", "192.168.77.1", "169.254.3.4", "::1", "fe80::1", "fd12::5", "::ffff:192.168.1.2"] {
+            assert!(is_lan_source(ip(local)), "{local}");
+        }
+        for other in ["8.8.8.8", "100.64.0.1", "100.100.100.100", "172.32.0.1", "192.169.0.1", "2001:db8::1", "::ffff:8.8.8.8"] {
+            assert!(!is_lan_source(ip(other)), "{other}");
+        }
+        assert_eq!(parse_range("10.0.0.0/33"), None);
+        assert_eq!(parse_range("nonsense"), None);
     }
 
     #[test]

@@ -49,6 +49,12 @@ pub fn parse_answer(p: &str, code: &str, from: SocketAddr) -> Option<Found> {
     Some(Found { addr: SocketAddr::new(from.ip(), port), id, pk })
 }
 
+/// Whether a query from `from` gets the answer: the right code, from a local address only (the same list as the
+/// sessions' IP whitelist: the answer carries the port and the identity, and is for the same network only).
+pub fn should_answer(packet: &[u8], code: &str, from: SocketAddr) -> bool {
+    kalango_remote_proto::setup::is_lan_source(from.ip()) && std::str::from_utf8(packet).ok().and_then(parse_query) == Some(code)
+}
+
 /// Answers queries for `code` until the process ends.
 pub fn respond(code: String, port: u16, id: String, pk: [u8; 32]) {
     std::thread::spawn(move || {
@@ -59,7 +65,7 @@ pub fn respond(code: String, port: u16, id: String, pk: [u8; 32]) {
         let answer = answer_packet(&code, port, &id, &pk);
         let mut buf = [0u8; 128];
         while let Ok((n, from)) = sock.recv_from(&mut buf) {
-            if std::str::from_utf8(&buf[..n]).ok().and_then(parse_query) == Some(code.as_str()) {
+            if should_answer(&buf[..n], &code, from) {
                 sock.send_to(answer.as_bytes(), from).ok();
             }
         }
@@ -156,6 +162,19 @@ pub fn find(code: &str, wait: Duration) -> std::io::Result<Option<Found>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_code_is_answered_only_on_the_local_network() {
+        let pk = [7u8; 32];
+        let code = kalango_remote_proto::code_for(&pk);
+        let q = query_packet(&code);
+        let from = |s: &str| SocketAddr::new(s.parse().unwrap(), 40000);
+        assert!(should_answer(q.as_bytes(), &code, from("192.168.77.1")));
+        assert!(should_answer(q.as_bytes(), &code, from("127.0.0.1")));
+        assert!(!should_answer(q.as_bytes(), &code, from("8.8.8.8")), "a public source gets no answer");
+        assert!(!should_answer(q.as_bytes(), &code, from("100.64.1.2")), "CGNAT/Tailscale is not the same network");
+        assert!(!should_answer(query_packet("AAAA-BBBB").as_bytes(), &code, from("192.168.77.1")));
+    }
 
     fn nic(name: &str, addr: &str, mask: &str, flags: i32) -> IfAddr {
         IfAddr { addr: addr.parse().unwrap(), mask: mask.parse().unwrap(), flags: flags as u32, name: name.into() }

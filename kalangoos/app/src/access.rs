@@ -66,6 +66,15 @@ pub fn prune_recordings(dir: &Path, now: SystemTime, days: u64) -> usize {
     gone
 }
 
+/// The setup for a share that is already running: `lan_sources_only` follows how the core was STARTED (`--lan` is
+/// fixed then), never the settings of now. Turning "also accept connections on the same network" off during a share would
+/// otherwise clear the list of local addresses while the core still listens on the network; turning it on does not open
+/// a listener until the next share.
+pub fn for_running_share(mut setup: Setup, started_on_network: bool) -> Setup {
+    setup.lan_sources_only = started_on_network;
+    setup
+}
+
 /// Whether sharing listens on the local network: "local network only", or the tunnel with "also accept connections on
 /// the same network" turned on. Then only addresses of local networks may come in (`lan_sources_only`).
 pub fn listens_on_the_network(s: &Settings) -> bool {
@@ -144,6 +153,40 @@ mod tests {
             assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--setup-stdin"]);
             assert!(!setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
         }
+    }
+
+    #[test]
+    fn a_running_share_keeps_the_protection_it_started_with() {
+        let v = Path::new("/v");
+        // started with the opt-in on: the core listens on the network; switching it off (or the network mode) mid-share
+        // must still push the list of local addresses
+        let mut s = Settings { lan_too: true, ..Settings::default() };
+        let started = listens_on_the_network(&s);
+        assert!(started && serve_args(&s).iter().any(|a| a == "--lan"));
+        s.lan_too = false;
+        assert!(!setup_for(&s, None, None, v).lan_sources_only, "the settings alone would clear it");
+        assert!(for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+        s.network = "server".into();
+        assert!(for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+        // the reverse: started on loopback only, the opt-in switched on mid-share: no list (and no new listener) until
+        // the next share
+        let mut s = Settings::default();
+        let started = listens_on_the_network(&s);
+        s.lan_too = true;
+        assert!(setup_for(&s, None, None, v).lan_sources_only);
+        assert!(!for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+    }
+
+    // every setup sent to a running core goes through for_running_share with the value fixed at start
+    #[test]
+    fn home_pushes_the_setup_of_the_running_share() {
+        let src = include_str!("home.rs");
+        let push = &src[src.find("    pub fn push_setup(&self) {").unwrap()..];
+        let push = &push[..push.find("\n    }\n").unwrap()];
+        assert!(push.contains("crate::access::for_running_share(crate::access::current_setup(&s), self.share_on_network.get())"));
+        let start = &src[src.find("    pub fn start_sharing(self: &Rc<Home>) {").unwrap()..];
+        let start = &start[..start.find("\n    }\n").unwrap()];
+        assert!(start.contains("self.share_on_network.set(crate::access::listens_on_the_network(&s));"));
     }
 
     #[test]

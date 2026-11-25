@@ -273,7 +273,12 @@ impl SettingsPage {
                 });
             });
         }
-        net.append(&bind_switch(ui::switch_row(tr("Prefer a direct connection on the same network"), tr("Faster; the tunnel stays as a fallback")), s.prefer_lan, &w, |s, v| s.prefer_lan = v));
+        net.append(&bind_switch(
+            ui::switch_row(tr("Also accept connections on the same network"), tr("Opens a port on the local network while you share (Cloudflare mode), so the code is found there; only local addresses get in")),
+            s.lan_too,
+            &w,
+            |s, v| s.lan_too = v,
+        ));
         net.append(&bind_switch(ui::switch_row(tr("Accept connection by IP address"), tr("Port 21118 · local network only")), s.accept_ip, &w, |s, v| s.accept_ip = v));
         let cf = ui::hbox(8, "");
         let status = cloudflared_status();

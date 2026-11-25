@@ -32,6 +32,7 @@ pub fn setup_for(s: &Settings, fixed_password: Option<String>, two_factor: Optio
         record_dir: s.record.then(|| videos.to_string_lossy().into_owned()),
         clipboard: s.clipboard,
         audio: s.audio,
+        lan_sources_only: listens_on_the_network(s),
         // with "own server" chosen it is always asked for; empty fields make the core refuse (never the tunnel instead)
         server: (s.network == "server").then(|| Server {
             id: s.server_id.trim().to_owned(),
@@ -65,11 +66,17 @@ pub fn prune_recordings(dir: &Path, now: SystemTime, days: u64) -> usize {
     gone
 }
 
+/// Whether sharing listens on the local network: "local network only", or the tunnel with "also accept connections on
+/// the same network" turned on. Then only addresses of local networks may come in (`lan_sources_only`).
+pub fn listens_on_the_network(s: &Settings) -> bool {
+    s.network == "lan" || (s.network == "cloudflare" && s.lan_too)
+}
+
 /// The arguments of `kalango-remote-core serve` for these settings. The code on the card is found on the same network
-/// through a UDP broadcast the core answers only when it listens on the network (`--lan`); in the default mode (the
-/// Cloudflare tunnel) that used to be off, so typing the code on a computer next door said "nobody on this network".
-/// With "prefer a direct connection on the same network" on, the tunnel mode listens on the network too (any port) and the
-/// tunnel stays: the password and, with "ask before", the approval are still needed, as in the tunnel.
+/// through a UDP broadcast the core answers only when it listens on the network (`--lan`). By default the tunnel mode
+/// listens only on this computer (loopback, as in 0.1.0): a port open on a café's Wi-Fi is not what sharing through the
+/// tunnel should do. With "also accept connections on the same network" on, it listens on the network too (any port)
+/// and the tunnel stays: the password and, with "ask before", the approval are still needed.
 pub fn serve_args(s: &Settings) -> Vec<String> {
     let mut args = vec!["serve".to_string()];
     if s.network == "lan" {
@@ -77,7 +84,7 @@ pub fn serve_args(s: &Settings) -> Vec<String> {
     } else if s.network == "server" {
         // through the own server: no tunnel; the core registers there and the id is the code
         args.push("--no-tunnel".into());
-    } else if s.prefer_lan {
+    } else if s.lan_too {
         args.extend(["--lan".into(), "--port".into(), "0".into()]);
     }
     if s.ask_before {
@@ -111,19 +118,40 @@ mod tests {
     }
 
     #[test]
-    fn the_code_works_on_the_same_network_in_the_default_mode_too() {
+    fn the_tunnel_opens_no_port_on_the_network_unless_asked() {
         let mut s = Settings::default();
-        assert_eq!((s.network.as_str(), s.prefer_lan, s.ask_before), ("cloudflare", true, true));
-        // the default: the tunnel AND the network (so the UDP code answers), asked before every access
+        assert_eq!((s.network.as_str(), s.lan_too, s.ask_before), ("cloudflare", false, true));
+        // the default: the tunnel only, the core listening on loopback (no --lan), asked before every access
+        assert_eq!(serve_args(&s), ["serve", "--ask", "--setup-stdin"]);
+        assert!(!serve_args(&s).iter().any(|a| a == "--lan"), "the tunnel mode must not listen on the network by default");
+        assert!(!listens_on_the_network(&s) && !setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        // opted in: the network too (so the code is found there), only from local addresses
+        s.lan_too = true;
         assert_eq!(serve_args(&s), ["serve", "--lan", "--port", "0", "--ask", "--setup-stdin"]);
-        s.prefer_lan = false;
-        assert_eq!(serve_args(&s), ["serve", "--ask", "--setup-stdin"], "tunnel only when the direct connection is not wanted");
+        assert!(setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        // local network only: no tunnel, the network, only from local addresses (whatever lan_too says)
         s.network = "lan".into();
-        assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--lan", "--ask", "--setup-stdin"]);
+        for lan_too in [false, true] {
+            s.lan_too = lan_too;
+            assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--lan", "--ask", "--setup-stdin"]);
+            assert!(setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        }
+        // the own server: never opened to the network, and its relayed connections come from anywhere
         s.network = "server".into();
         s.ask_before = false;
-        s.prefer_lan = true;
-        assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--setup-stdin"], "the own server is never opened to the network");
+        for lan_too in [false, true] {
+            s.lan_too = lan_too;
+            assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--setup-stdin"]);
+            assert!(!setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        }
+    }
+
+    #[test]
+    fn an_old_settings_file_does_not_open_the_network() {
+        // 0.1.1 builds before this had `prefer_lan: true` by default; it must not become the new opt-in
+        let s: Settings = serde_json::from_str(r#"{"network": "cloudflare", "prefer_lan": true}"#).unwrap();
+        assert!(!s.lan_too);
+        assert!(!serve_args(&s).iter().any(|a| a == "--lan"));
     }
 
     #[test]

@@ -64,7 +64,10 @@ pub struct Settings {
     pub server_id: String,
     pub server_relay: String,
     pub server_key: String,
-    pub prefer_lan: bool,
+    /// Sharing through the tunnel also listens on the local network (so the code is found there): off unless the
+    /// person turns it on, because it opens a port on whatever network the computer is on. (Replaces `prefer_lan`,
+    /// which did nothing in 0.1.0 and was on by default: an old settings file does not turn this on.)
+    pub lan_too: bool,
     pub accept_ip: bool,
     pub allowed_only: bool,
     pub allowed: Vec<AllowedDevice>,
@@ -95,7 +98,7 @@ impl Default for Settings {
             server_id: String::new(),
             server_relay: String::new(),
             server_key: String::new(),
-            prefer_lan: true,
+            lan_too: false,
             accept_ip: false,
             allowed_only: false,
             allowed: Vec::new(),

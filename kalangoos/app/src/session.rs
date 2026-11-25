@@ -272,7 +272,7 @@ impl Session {
             "error" => {
                 let kind = s("kind");
                 (self.on_event)(ConnectEvent::Failed(if kind == "code_not_found" {
-                    tr("Nobody on this network is sharing with that code. Outside the network, ask for the link.").to_owned()
+                    tr("Nobody on this network is sharing with that code. Whoever shares needs to turn on “Also accept connections on the same network” or choose “Local network only, direct”; outside the network, ask for the link.").to_owned()
                 } else {
                     kind
                 }));

@@ -31,7 +31,14 @@ pub struct Setup {
     /// files in its request. Clipboard and audio follow the settings for every session.
     pub clipboard: bool,
     pub audio: bool,
+    /// The core listens on the local network: only loopback (the tunnel's cloudflared) and private or link-local
+    /// addresses may come in (RustDesk's IP whitelist, checked before the password).
+    pub lan_sources_only: bool,
 }
+
+/// The source ranges a share that listens on the local network accepts: loopback (the tunnel connects from there),
+/// the private ranges (RFC 1918, IPv6 unique local) and link-local.
+pub const LAN_SOURCES: &str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,::1/128,fc00::/7,fe80::/10";
 
 impl Setup {
     /// Refuses what cannot be honoured, so the core never runs with a protection silently off.
@@ -71,6 +78,8 @@ impl Setup {
         o.push(("enable-remote-restart", "N".into()));
         o.push(("enable-clipboard", yn(self.clipboard)));
         o.push(("enable-audio", yn(self.audio)));
+        // always set: a share without the network must not keep the list of an earlier one (and vice versa)
+        o.push(("whitelist", if self.lan_sources_only { LAN_SOURCES.to_owned() } else { String::new() }));
         let s = self.server.clone().unwrap_or_default();
         o.push(("custom-rendezvous-server", s.id));
         o.push(("relay-server", s.relay));
@@ -136,6 +145,18 @@ mod tests {
         assert!(srv("").validate().is_err());
         assert!(srv("AAAA").validate().is_ok());
         assert!(Setup { fixed_password: Some("curta".into()), ..Default::default() }.validate().is_err());
+    }
+
+    #[test]
+    fn a_share_on_the_network_lets_in_only_local_addresses() {
+        assert_eq!(get(&Setup::default().options(true), "whitelist"), "", "loopback-only share: no list (and none left over)");
+        let lan = Setup { lan_sources_only: true, ..Default::default() };
+        let list = get(&lan.options(true), "whitelist").to_owned();
+        assert_eq!(list, LAN_SOURCES);
+        for must in ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "fe80::/10", "fc00::/7"] {
+            assert!(list.split(',').any(|r| r == must), "{must}");
+        }
+        assert!(!list.split(",").any(|r| r == "0.0.0.0"), "0.0.0.0 in RustDesk's whitelist means everyone");
     }
 
     #[test]

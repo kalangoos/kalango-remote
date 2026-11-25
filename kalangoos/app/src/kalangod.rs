@@ -8,6 +8,11 @@ fn socket() -> std::path::PathBuf {
     std::env::var_os("KALANGOD_SOCKET").map(Into::into).unwrap_or_else(|| "/run/kalango/mcp.sock".into())
 }
 
+/// Whether kalangod is there (KalangoOS): its socket exists.
+pub fn present() -> bool {
+    socket().exists()
+}
+
 pub fn rpc(method: &str, params: Value) -> Result<Value, String> {
     let s = std::os::unix::net::UnixStream::connect(socket()).map_err(|e| e.to_string())?;
     s.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();

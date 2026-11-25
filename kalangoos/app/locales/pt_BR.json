@@ -16,6 +16,7 @@
  "AV1 when both accelerate it; otherwise VP9 or H.264": "AV1 quando os dois aceleram; senão VP9 ou H.264",
  "Accept connection by IP address": "Aceitar conexão por endereço IP",
  "Accept only the devices on this list": "Aceitar só aparelhos desta lista",
+ "Access refused by the system: {why}": "Acesso recusado pelo sistema: {why}",
  "Add to favorites": "Adicionar aos favoritos",
  "Address": "Endereço",
  "Addresses allowed on the local network (e.g. 192.168.0.0/24)": "Endereços permitidos na rede local (ex.: 192.168.0.0/24)",

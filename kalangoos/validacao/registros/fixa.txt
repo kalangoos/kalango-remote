@@ -1,0 +1,16 @@
+alvo: https://192.168.77.2:33653/#k=11141122.fOB4RmThcPsG2TDwP7D_tH0hK5r2CW8PJFEQ5pJLajY  código: HM0A-R395
+ok: a senha de uso único ficou esperando a aprovação (nenhum quadro)
+{"addr":"192.168.77.2:33653","event":"resolved","pinned":true}
+{"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
+{"event":"permission","name":"clipboard","value":false}
+{"event":"permission","name":"audio","value":false}
+{"event":"permission","name":"restart","value":false}
+{"after_ms":352,"height":600,"probe":"first_frame","width":800}
+{"dropped":0,"fps_after_first":0.0,"frames":1,"probe":"done"}
+tempo total: 1.3 s
+ok: a senha fixa entrou sem ninguém aprovar (acesso sem supervisão), cifrada de ponta a ponta
+ok: com a senha fixa a sessão de arquivos é recusada
+ok: a sessão de arquivos aprovada por clique abre
+ok: trocar a senha fixa encerrou na hora a sessão que entrou com a antiga
+OK: depois de desligar, a senha fixa é recusada na hora
+registros em /tmp/kalango-remote-teste-YMto

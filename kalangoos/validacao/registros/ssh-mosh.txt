@@ -1,0 +1,22 @@
+1. importar
+1 servidores, 0 chaves conhecidas, 1 identidades
+   ok: vm-b importado (vm-b)
+2. chave desconhecida
+   unknown ED25519 SHA256:HxG64tqrsO2x6aGGFLS8jF5qncNn6cGtA+sZEGoJcUc
+   ok: recusou sem confiar
+3. confiar e conectar
+   ok: conectou pelo sshd da B com a chave do cofre
+4. Mosh, com a rede interrompida
+["mosh","--ssh=ssh -F /dev/null -o UserKnownHostsFile=/tmp/kalango-remote-ssh2-826224/config/kalango/remote/known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -i /tmp/kalango-r
+   /usr/bin/mosh
+   /usr/bin/mosh-client
+   B: /usr/bin/mosh-server
+   (rede da B caída)
+   (rede da B de volta)
+   o mosh mostrou: FIM-MOSH;
+   ok: a sessão Mosh sobreviveu à rede interrompida e terminou
+5. a chave do servidor muda
+   changed ED25519 SHA256:EIq6spO9WQcbyucBccTKq2nrEwOEc02wUsv6ZEsTOyM
+   ok: bloqueado (ssh e mosh)
+OK
+(pastas do teste apagadas)

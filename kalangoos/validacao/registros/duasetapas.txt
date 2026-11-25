@@ -1,0 +1,13 @@
+alvo: https://192.168.77.2:45677/#k=11141122.4fq5gVpeSo7a29f-GbYQ1m9L-pssKc3DzdIUIPAXnEA  código: E7G5-XWHZ
+ok: sem o código pediu as duas etapas e nenhum quadro chegou
+{"addr":"192.168.77.2:45677","event":"resolved","pinned":true}
+{"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
+{"event":"permission","name":"clipboard","value":false}
+{"event":"permission","name":"audio","value":false}
+{"event":"permission","name":"restart","value":false}
+{"event":"message","msgtype":"input-2fa","retry":false,"text":"","title":"2FA Required"}
+{"after_ms":243,"height":600,"probe":"first_frame","width":800}
+{"dropped":0,"fps_after_first":0.0,"frames":1,"probe":"done"}
+tempo total: 0.8 s
+OK: sessão cifrada de ponta a ponta, quadros recebidos (/tmp/kalango-remote-teste-ZHqy/primeiro-quadro.png)
+registros em /tmp/kalango-remote-teste-ZHqy

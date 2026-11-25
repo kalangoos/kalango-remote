@@ -1,0 +1,6 @@
+alvo: https://192.168.77.2:38253/#k=11141122.BEZpbW37eJuJIz5CiKE-ME6mQ9jC9XSrdPPuirPpA_0  código: C4GB-TWD5
+{"addr":"192.168.77.2:38253","event":"resolved","pinned":true}
+{"event":"message","msgtype":"error","retry":true,"text":"Kalango Remote: the peer's identity does not match the invite (signature does not verify)","title":"Connection Error"}
+tempo total: 0.5 s
+OK: chave diferente da do convite, sessão recusada sem cair para texto aberto
+registros em /tmp/kalango-remote-teste-NXUQ

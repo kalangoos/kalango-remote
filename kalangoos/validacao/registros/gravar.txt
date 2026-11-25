@@ -1,0 +1,19 @@
+alvo: https://192.168.77.2:34673/#k=11141122.MSDnSRG3ExsS3NzCwWPOAtk5pnuPM7BEP19nTi1wxuY  código: 1EMW-XV4C
+{"addr":"192.168.77.2:34673","event":"resolved","pinned":true}
+{"after_ms":126,"height":600,"probe":"first_frame","width":800}
+{"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
+{"event":"permission","name":"clipboard","value":false}
+{"event":"permission","name":"audio","value":false}
+{"event":"permission","name":"restart","value":false}
+{"cursor_embedded":false,"event":"display","height":600,"width":800,"x":0,"y":0}
+{"current_display":0,"displays":[{"height":600,"name":"screen","width":800,"x":0,"y":0}],"event":"peer_info","hostname":"kalangoos","platform":"Linux","username":"kalango","version":"1.5.3"}
+{"event":"message","msgtype":"success","retry":false,"text":"Connected, waiting for image...","title":"Successful"}
+{"conn_type":"DEFAULT_CONN","event":"connected"}
+{"event":"chat","text":"This session is being recorded on the shared computer."}
+{"event":"closed"}
+{"dropped":2,"fps_after_first":14.7,"frames":30,"probe":"done"}
+tempo total: 2.9 s
+stat: cannot stat '/tmp/kalango-remote-teste-eQYO/srv/Vídeos/Kalango': No such file or directory (os error 2)
+stat: cannot stat 'Remote/incoming_11141122_20261125010420377_display0_vp8.webm': No such file or directory (os error 2)
+OK: a sessão recebida foi gravada em /tmp/kalango-remote-teste-eQYO/srv/Vídeos/Kalango Remote/incoming_11141122_20261125010420377_display0_vp8.webm (na B,  bytes)
+registros em /tmp/kalango-remote-teste-eQYO

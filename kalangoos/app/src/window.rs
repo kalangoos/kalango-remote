@@ -251,6 +251,10 @@ impl Window {
         ui::toast(&self.overlay, text);
     }
 
+    pub fn toast_for(&self, text: &str, duration: std::time::Duration) {
+        ui::toast_for(&self.overlay, text, duration);
+    }
+
     /// Hands a request to KalangoOS's agent (`kalango-shell pedir`), with this app as context; the agent
     /// asks for approval at every step that acts on a computer.
     pub fn ask_agent(&self, request: &str) {

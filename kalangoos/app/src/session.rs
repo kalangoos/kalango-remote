@@ -272,7 +272,7 @@ impl Session {
             "error" => {
                 let kind = s("kind");
                 (self.on_event)(ConnectEvent::Failed(if kind == "code_not_found" {
-                    tr("Nobody on this network is sharing with that code. Outside the network, ask for the link.").to_owned()
+                    tr("Nobody on this network is sharing with that code. Whoever shares needs to turn on “Also accept connections on the same network” or choose “Local network only, direct”; outside the network, ask for the link.").to_owned()
                 } else {
                     kind
                 }));
@@ -660,6 +660,9 @@ impl Session {
         transfer.set_transition_type(gtk::RevealerTransitionType::Crossfade);
         transfer.set_halign(Align::Fill);
         transfer.set_valign(Align::Fill);
+        // closed, it still covers the whole picture and would take every click and move (the mouse never reached
+        // the other computer): it takes the pointer only while open
+        transfer.set_can_target(false);
         overlay.add_overlay(&transfer);
 
         let root = ui::vbox(0, "");
@@ -1113,13 +1116,19 @@ impl Session {
             v.transfer.set_child(Some(&t.root));
             *v.files.borrow_mut() = Some(t);
         }
-        v.transfer.set_reveal_child(true);
+        show_transfer(&v.transfer, true);
         let files = v.files.borrow().clone();
         if let Some(t) = files {
             let p = t.remote_path.borrow().clone();
             t.load_remote(&p);
         }
     }
+}
+
+/// Opens or closes the file transfer area over the picture; only an open one takes the pointer.
+fn show_transfer(transfer: &gtk::Revealer, open: bool) {
+    transfer.set_can_target(open);
+    transfer.set_reveal_child(open);
 }
 
 fn has_open_popover(w: &gtk::Widget) -> bool {
@@ -1315,7 +1324,7 @@ impl Transfer {
         let me = Rc::downgrade(s);
         close.connect_clicked(move |_| {
             if let Some(v) = me.upgrade().and_then(|s| s.view.borrow().clone()) {
-                v.transfer.set_reveal_child(false);
+                show_transfer(&v.transfer, false);
             }
         });
         let tw = Rc::downgrade(&t);
@@ -1623,6 +1632,20 @@ mod tests {
         assert!(matches!(classify_message("wait-remote-accept-nook", "Prompt", "Please wait for the remote side to accept"), Some(ConnectEvent::Waiting(_))));
         assert!(classify_message("success", "Successful", "Connected, waiting for image...").is_none());
         assert!(matches!(classify_message("error", "Connection Error", "Closed manually by the peer"), Some(ConnectEvent::Failed(t)) if t == tr("The person denied the access.")));
+    }
+
+    // the transfer area is an overlay over the whole picture: while closed it must not take the pointer, or the mouse of
+    // whoever controls never reaches the other computer (found in two VMs; there is no display in the tests)
+    #[test]
+    fn the_closed_transfer_area_lets_the_pointer_through() {
+        let src = include_str!("session.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let build = &code[code.find("let transfer = gtk::Revealer::new();").unwrap()..];
+        let build = &build[..build.find("overlay.add_overlay(&transfer);").unwrap()];
+        assert!(build.contains("transfer.set_can_target(false);"), "the transfer revealer must start without the pointer");
+        let helper = "fn show_transfer(transfer: &gtk::Revealer, open: bool) {\n    transfer.set_can_target(open);\n    transfer.set_reveal_child(open);";
+        assert!(code.contains(helper), "show_transfer must switch the pointer together with the reveal");
+        assert_eq!(code.matches("transfer.set_reveal_child(").count(), 1, "open and close the transfer area only through show_transfer");
     }
 
     #[test]

@@ -30,7 +30,19 @@ use gtk::{gio, glib, prelude::*};
 
 const APP_ID: &str = "os.kalango.Remote";
 
+/// The first thing the process does: not dumpable. A dumpable process can be ptrace-attached by anything of the
+/// same user (Yama's ptrace_scope 1 only limits that to its ancestors) and its memory and environment read through
+/// /proc; kalangod, which gives this app and its core the screen, the keyboard and the privacy cover, refuses them
+/// unless they are out of that reach, and takes the permission back when they stop being.
+fn harden_self() {
+    // SAFETY: prctl(PR_SET_DUMPABLE, 0) only changes this process's own flag.
+    unsafe {
+        libc::prctl(libc::PR_SET_DUMPABLE, 0 as libc::c_ulong, 0 as libc::c_ulong, 0 as libc::c_ulong, 0 as libc::c_ulong);
+    }
+}
+
 fn main() -> glib::ExitCode {
+    harden_self();
     // the Terminal's side of the SSH contract: no window, an answer on stdout
     let args: Vec<String> = std::env::args().skip(1).collect();
     // scripts and tests: import ~/.ssh (config, keys, known_hosts); read a server's key and what the
@@ -106,4 +118,29 @@ fn main() -> glib::ExitCode {
         0
     });
     app.run()
+}
+
+#[cfg(test)]
+mod harden_tests {
+    #[test]
+    fn the_process_stops_being_dumpable() {
+        use std::os::unix::fs::MetadataExt;
+        super::harden_self();
+        // the kernel makes the files of a non-dumpable process root's: how kalangod sees it from outside
+        assert_eq!(std::fs::metadata("/proc/self/status").map(|m| m.uid()).ok(), Some(0));
+        assert!(std::fs::read("/proc/self/environ").is_err() || nix_is_root());
+    }
+
+    // the first thing `main` does is `harden_self()`: nothing starts, reads input or opens a socket before that
+    #[test]
+    fn main_hardens_the_process_first() {
+        let src = include_str!("main.rs");
+        let body = &src[src.find("fn main() -> glib::ExitCode {").unwrap() + "fn main() -> glib::ExitCode {".len()..];
+        let first = body.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("//")).unwrap_or("");
+        assert_eq!(first, "harden_self();", "harden_self() must be the first statement of main");
+    }
+    fn nix_is_root() -> bool {
+        // SAFETY: getuid has no preconditions.
+        unsafe { libc::getuid() == 0 }
+    }
 }

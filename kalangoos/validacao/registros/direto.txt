@@ -1,0 +1,16 @@
+alvo: https://192.168.77.2:35323/#k=11141122.MKH7fk9FF0n8HBXiGmxQmaV9WrfXIadjzcbLz8m0BQ0  código: 920J-7MQE
+{"addr":"192.168.77.2:35323","event":"resolved","pinned":true}
+{"after_ms":107,"height":600,"probe":"first_frame","width":800}
+{"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
+{"event":"permission","name":"clipboard","value":false}
+{"event":"permission","name":"audio","value":false}
+{"event":"permission","name":"restart","value":false}
+{"cursor_embedded":false,"event":"display","height":600,"width":800,"x":0,"y":0}
+{"current_display":0,"displays":[{"height":600,"name":"screen","width":800,"x":0,"y":0}],"event":"peer_info","hostname":"kalangoos","platform":"Linux","username":"kalango","version":"1.5.3"}
+{"event":"message","msgtype":"success","retry":false,"text":"Connected, waiting for image...","title":"Successful"}
+{"conn_type":"DEFAULT_CONN","event":"connected"}
+{"event":"closed"}
+{"dropped":0,"fps_after_first":19.4,"frames":30,"probe":"done"}
+tempo total: 2.2 s
+OK: sessão cifrada de ponta a ponta, quadros recebidos (/tmp/kalango-remote-teste-KdvW/primeiro-quadro.png)
+registros em /tmp/kalango-remote-teste-KdvW

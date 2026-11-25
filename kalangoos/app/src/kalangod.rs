@@ -8,6 +8,17 @@ fn socket() -> std::path::PathBuf {
     std::env::var_os("KALANGOD_SOCKET").map(Into::into).unwrap_or_else(|| "/run/kalango/mcp.sock".into())
 }
 
+/// Whether kalangod is there (KalangoOS): its socket exists.
+pub fn present() -> bool {
+    present_at(&socket())
+}
+
+/// Only a socket that is certainly not there means no kalangod: an error reading it (permissions, a broken path) counts
+/// as present, so a refusal is never taken for "not KalangoOS".
+fn present_at(p: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(p).map_or_else(|e| e.kind() != std::io::ErrorKind::NotFound, |_| true)
+}
+
 pub fn rpc(method: &str, params: Value) -> Result<Value, String> {
     let s = std::os::unix::net::UnixStream::connect(socket()).map_err(|e| e.to_string())?;
     s.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
@@ -63,6 +74,15 @@ pub fn compositor_supports_privacy() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kalangod_is_absent_only_when_its_socket_is_certainly_not_there() {
+        assert!(!present_at(std::path::Path::new("/nonexistent-kalango-test/mcp.sock")));
+        assert!(present_at(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))));
+        // a file used as a directory: ENOTDIR, not "not found"
+        let f = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml").join("mcp.sock");
+        assert!(present_at(&f));
+    }
 
     #[test]
     fn only_the_privacy_feature_counts() {

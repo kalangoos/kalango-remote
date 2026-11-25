@@ -62,16 +62,29 @@ impl Incoming {
     /// Before a session sees anything: KalangoOS's niri gives screen capture (and, with `control`, the pointer and
     /// the keyboard) only to processes kalangod allows (niri patch 0008). Outside KalangoOS there is no kalangod
     /// and nothing to ask for.
-    fn grant(&self, control: bool) {
+    /// The refusal, when kalangod is there and did not give it: the session would see nothing, so it does not start.
+    fn grant(&self, control: bool) -> Option<String> {
         self.last_control.set(control);
         let privacy = self.wants_privacy();
         let Some(pid) = self.core_pid() else {
             eprintln!("kalango-remote: permissão de controle remoto: o núcleo não está rodando");
-            return;
+            return None;
         };
-        match crate::kalangod::grant(pid, control, privacy) {
+        let result = crate::kalangod::grant(pid, control, privacy);
+        match &result {
             Ok(()) => eprintln!("kalango-remote: permissão de controle remoto dada ao núcleo {pid} (controle: {control}, privacidade: {privacy})"),
             Err(e) => eprintln!("kalango-remote: permissão de controle remoto: {e}"),
+        }
+        grant_refusal(result, crate::kalangod::present())
+    }
+
+    /// A connection kalangod would not let see the screen: it is closed and the person here is told why, instead of
+    /// a "controlling this computer" banner over a session that shows nothing.
+    fn refuse(&self, id: i32, why: &str) {
+        self.send(json!({"cmd": "close", "id": id}));
+        if let Some(w) = Window::get() {
+            // longer than a short notice: it explains why, and is easy to miss
+            w.toast_for(&trf("Access refused by the system: {why}", &[("why", refusal_reason(why))]), std::time::Duration::from_secs(6));
         }
     }
 
@@ -89,7 +102,16 @@ impl Incoming {
     /// started or ended): the cover comes and goes at once.
     pub fn refresh_grant(&self) {
         if !self.active.borrow().is_empty() {
-            self.grant(self.last_control.get());
+            // a refused new grant does not end the sessions by itself: kalangod's `allow` returns the error before it
+            // touches the earlier grant, and its once-a-second recheck (`prune`/`still_safe` in kalangod's
+            // remote_control.rs) looks only at the core, not at this app. So they are closed here and the grant dropped.
+            if let Some(why) = self.grant(self.last_control.get()) {
+                let ids: Vec<i32> = self.active.borrow().keys().copied().collect();
+                for id in ids {
+                    self.refuse(id, &why);
+                }
+                self.revoke();
+            }
         }
     }
 
@@ -99,10 +121,14 @@ impl Incoming {
         }
     }
 
-    /// Allows the connection `id`, the permission first.
-    fn authorize(&self, id: i32, keyboard: bool, clipboard: bool, audio: bool, file: bool) {
-        self.grant(keyboard);
+    /// Allows the connection `id`, the permission first; false (and the connection closed) when it was refused.
+    fn authorize(&self, id: i32, keyboard: bool, clipboard: bool, audio: bool, file: bool) -> bool {
+        if let Some(why) = self.grant(keyboard) {
+            self.refuse(id, &why);
+            return false;
+        }
         self.send(json!({"cmd": "authorize", "id": id, "keyboard": keyboard, "clipboard": clipboard, "audio": audio, "file": file}));
+        true
     }
 
     pub fn on_event(self: &Rc<Incoming>, v: &Value) {
@@ -116,8 +142,10 @@ impl Incoming {
                     }
                     if !self.active.borrow().contains_key(&id) {
                         // allowed without our dialog (a fixed password): the permission now
-                        self.grant(v["keyboard"].as_bool().unwrap_or(true));
-                        self.start_indicator(id, v);
+                        match self.grant(v["keyboard"].as_bool().unwrap_or(true)) {
+                            Some(why) => self.refuse(id, &why),
+                            None => self.start_indicator(id, v),
+                        }
                     }
                 } else if !self.requests.borrow().contains_key(&id) {
                     // a device in the allowed list (still in time) goes straight in
@@ -126,7 +154,7 @@ impl Incoming {
                         w.settings.borrow().allowed.iter().any(|a| a.id == peer && (a.until == 0 || a.until > store::now()))
                     });
                     if allowed {
-                        self.authorize(id, true, true, false, true);
+                        let _ = self.authorize(id, true, true, false, true);
                     } else {
                         self.show_request(id, v);
                     }
@@ -280,9 +308,9 @@ impl Incoming {
             let Some(me) = me.upgrade() else { return };
             let Some(r) = me.requests.borrow_mut().remove(&id) else { return };
             if allow {
-                me.authorize(id, kb.is_active(), clip.is_active(), audio.is_active(), file.is_active());
+                let allowed = me.authorize(id, kb.is_active(), clip.is_active(), audio.is_active(), file.is_active());
                 // the core does not announce the connection again after "authorize": the indicator starts here
-                if !me.active.borrow().contains_key(&id) {
+                if allowed && !me.active.borrow().contains_key(&id) {
                     me.start_indicator(id, &json!({"name": name, "keyboard": kb.is_active()}));
                 }
                 let until = match dur.selected() {
@@ -290,7 +318,7 @@ impl Incoming {
                     2 => Some(0),
                     _ => None,
                 };
-                if let (Some(until), Some(w)) = (until, Window::get()) {
+                if let (true, Some(until), Some(w)) = (allowed, until, Window::get()) {
                     w.settings.borrow_mut().allowed.push(AllowedDevice { name: name.clone(), id: peer_id.clone(), until, since: store::now() });
                     w.settings_changed();
                 }
@@ -545,3 +573,74 @@ impl Home {
         self.with_core(|c| c.send(v));
     }
 }
+
+/// kalangod's reason, at most ~200 characters: the notice must fit in a window.
+fn refusal_reason(why: &str) -> String {
+    const MAX: usize = 200;
+    if why.chars().count() <= MAX {
+        return why.to_owned();
+    }
+    let mut s: String = why.chars().take(MAX).collect();
+    s.push('…');
+    s
+}
+
+/// The refusal of a grant: only when kalangod is there (outside KalangoOS there is none and the compositor decides).
+fn grant_refusal(result: Result<(), String>, kalangod_present: bool) -> Option<String> {
+    match result {
+        Err(e) if kalangod_present => Some(e),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refused_grant_stops_the_session_only_where_kalangod_decides() {
+        assert_eq!(grant_refusal(Ok(()), true), None);
+        assert_eq!(grant_refusal(Err("dumpable".into()), true), Some("dumpable".into()));
+        // no kalangod (another distribution): nothing to ask, the session goes on
+        assert_eq!(grant_refusal(Err("No such file or directory".into()), false), None);
+    }
+
+    #[test]
+    fn a_long_reason_is_cut() {
+        assert_eq!(refusal_reason("dumpable"), "dumpable");
+        let long = "x".repeat(500);
+        let cut = refusal_reason(&long);
+        assert_eq!(cut.chars().count(), 201);
+        assert!(cut.ends_with('…'));
+    }
+
+    // every refusal closes the connection: a refused session must not stay open waiting for a picture
+    #[test]
+    fn every_refusal_closes_the_connection() {
+        let src = include_str!("incoming.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let body = |start: &str| {
+            let b = &code[code.find(start).unwrap_or_else(|| panic!("{start}"))..];
+            b[..b.find("\n    }\n").unwrap()].to_owned()
+        };
+        assert!(body("    fn refuse(&self, id: i32, why: &str) {").contains(r#"self.send(json!({"cmd": "close", "id": id}));"#), "refuse must close the connection");
+        let authorize = body("    fn authorize(&self,");
+        assert!(authorize.contains("if let Some(why) = self.grant(keyboard) {\n            self.refuse(id, &why);\n            return false;"), "authorize must refuse before authorizing");
+        assert!(code.contains("Some(why) => self.refuse(id, &why),"), "a session allowed without the dialog must be refused too");
+        assert!(body("    pub fn refresh_grant(&self) {").contains("self.refuse(id, &why);"), "a refused new grant must close the sessions");
+        assert!(code.contains("let allowed = me.authorize(") && code.contains("if allowed && "), "the dialog's banner waits for authorize");
+        assert_eq!(code.matches("self.refuse(").count(), 3, "every refusal site is checked here");
+    }
+
+    // the banner "… is controlling this computer" only for a session that got the permission
+    #[test]
+    fn the_banner_waits_for_the_permission() {
+        let src = include_str!("incoming.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        assert!(code.contains("let allowed = me.authorize("));
+        assert!(code.contains("if allowed && !me.active.borrow().contains_key(&id) {"));
+        assert!(code.contains("Some(why) => self.refuse(id, &why),\n                            None => self.start_indicator(id, v),"));
+        assert_eq!(code.matches("start_indicator(id,").count(), 2, "every place that starts the banner is checked here");
+    }
+}
+

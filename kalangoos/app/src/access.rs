@@ -32,6 +32,7 @@ pub fn setup_for(s: &Settings, fixed_password: Option<String>, two_factor: Optio
         record_dir: s.record.then(|| videos.to_string_lossy().into_owned()),
         clipboard: s.clipboard,
         audio: s.audio,
+        lan_sources_only: listens_on_the_network(s),
         // with "own server" chosen it is always asked for; empty fields make the core refuse (never the tunnel instead)
         server: (s.network == "server").then(|| Server {
             id: s.server_id.trim().to_owned(),
@@ -65,6 +66,43 @@ pub fn prune_recordings(dir: &Path, now: SystemTime, days: u64) -> usize {
     gone
 }
 
+/// The setup for a share that is already running: `lan_sources_only` follows how the core was STARTED (`--lan` is
+/// fixed then), never the settings of now. Turning "also accept connections on the same network" off during a share would
+/// otherwise clear the list of local addresses while the core still listens on the network; turning it on does not open
+/// a listener until the next share.
+pub fn for_running_share(mut setup: Setup, started_on_network: bool) -> Setup {
+    setup.lan_sources_only = started_on_network;
+    setup
+}
+
+/// Whether sharing listens on the local network: "local network only", or the tunnel with "also accept connections on
+/// the same network" turned on. Then only addresses of local networks may come in (`lan_sources_only`).
+pub fn listens_on_the_network(s: &Settings) -> bool {
+    s.network == "lan" || (s.network == "cloudflare" && s.lan_too)
+}
+
+/// The arguments of `kalango-remote-core serve` for these settings. The code on the card is found on the same network
+/// through a UDP broadcast the core answers only when it listens on the network (`--lan`). By default the tunnel mode
+/// listens only on this computer (loopback, as in 0.1.0): a port open on a café's Wi-Fi is not what sharing through the
+/// tunnel should do. With "also accept connections on the same network" on, it listens on the network too (any port)
+/// and the tunnel stays: the password and, with "ask before", the approval are still needed.
+pub fn serve_args(s: &Settings) -> Vec<String> {
+    let mut args = vec!["serve".to_string()];
+    if s.network == "lan" {
+        args.extend(["--no-tunnel".into(), "--lan".into()]);
+    } else if s.network == "server" {
+        // through the own server: no tunnel; the core registers there and the id is the code
+        args.push("--no-tunnel".into());
+    } else if s.lan_too {
+        args.extend(["--lan".into(), "--port".into(), "0".into()]);
+    }
+    if s.ask_before {
+        args.push("--ask".into());
+    }
+    args.push("--setup-stdin".into());
+    args
+}
+
 /// Locks this computer's screen (logind: the same path as the power menu).
 pub fn lock_screen() {
     // the test profile (`KALANGO_REMOTE_COFRE=arquivo`) never locks the real session of whoever runs the tests
@@ -86,6 +124,77 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn the_tunnel_opens_no_port_on_the_network_unless_asked() {
+        let mut s = Settings::default();
+        assert_eq!((s.network.as_str(), s.lan_too, s.ask_before), ("cloudflare", false, true));
+        // the default: the tunnel only, the core listening on loopback (no --lan), asked before every access
+        assert_eq!(serve_args(&s), ["serve", "--ask", "--setup-stdin"]);
+        assert!(!serve_args(&s).iter().any(|a| a == "--lan"), "the tunnel mode must not listen on the network by default");
+        assert!(!listens_on_the_network(&s) && !setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        // opted in: the network too (so the code is found there), only from local addresses
+        s.lan_too = true;
+        assert_eq!(serve_args(&s), ["serve", "--lan", "--port", "0", "--ask", "--setup-stdin"]);
+        assert!(setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        // local network only: no tunnel, the network, only from local addresses (whatever lan_too says)
+        s.network = "lan".into();
+        for lan_too in [false, true] {
+            s.lan_too = lan_too;
+            assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--lan", "--ask", "--setup-stdin"]);
+            assert!(setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        }
+        // the own server: never opened to the network, and its relayed connections come from anywhere
+        s.network = "server".into();
+        s.ask_before = false;
+        for lan_too in [false, true] {
+            s.lan_too = lan_too;
+            assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--setup-stdin"]);
+            assert!(!setup_for(&s, None, None, Path::new("/v")).lan_sources_only);
+        }
+    }
+
+    #[test]
+    fn a_running_share_keeps_the_protection_it_started_with() {
+        let v = Path::new("/v");
+        // started with the opt-in on: the core listens on the network; switching it off (or the network mode) mid-share
+        // must still push the list of local addresses
+        let mut s = Settings { lan_too: true, ..Settings::default() };
+        let started = listens_on_the_network(&s);
+        assert!(started && serve_args(&s).iter().any(|a| a == "--lan"));
+        s.lan_too = false;
+        assert!(!setup_for(&s, None, None, v).lan_sources_only, "the settings alone would clear it");
+        assert!(for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+        s.network = "server".into();
+        assert!(for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+        // the reverse: started on loopback only, the opt-in switched on mid-share: no list (and no new listener) until
+        // the next share
+        let mut s = Settings::default();
+        let started = listens_on_the_network(&s);
+        s.lan_too = true;
+        assert!(setup_for(&s, None, None, v).lan_sources_only);
+        assert!(!for_running_share(setup_for(&s, None, None, v), started).lan_sources_only);
+    }
+
+    // every setup sent to a running core goes through for_running_share with the value fixed at start
+    #[test]
+    fn home_pushes_the_setup_of_the_running_share() {
+        let src = include_str!("home.rs");
+        let push = &src[src.find("    pub fn push_setup(&self) {").unwrap()..];
+        let push = &push[..push.find("\n    }\n").unwrap()];
+        assert!(push.contains("crate::access::for_running_share(crate::access::current_setup(&s), self.share_on_network.get())"));
+        let start = &src[src.find("    pub fn start_sharing(self: &Rc<Home>) {").unwrap()..];
+        let start = &start[..start.find("\n    }\n").unwrap()];
+        assert!(start.contains("self.share_on_network.set(crate::access::listens_on_the_network(&s));"));
+    }
+
+    #[test]
+    fn an_old_settings_file_does_not_open_the_network() {
+        // 0.1.1 builds before this had `prefer_lan: true` by default; it must not become the new opt-in
+        let s: Settings = serde_json::from_str(r#"{"network": "cloudflare", "prefer_lan": true}"#).unwrap();
+        assert!(!s.lan_too);
+        assert!(!serve_args(&s).iter().any(|a| a == "--lan"));
     }
 
     #[test]

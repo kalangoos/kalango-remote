@@ -19,6 +19,12 @@
 #     impostor  o convite traz outra chave: a sessão tem de ser recusada (sai 0 se foi)
 # O lado compartilhado captura o DISPLAY dado (um Xvfb, padrão :89). Sai 0 se o probe recebeu quadros
 # numa sessão cifrada de ponta a ponta. MOVIMENTO=1 anima a tela; QUADROS=N (padrão 30).
+# DUAS MÁQUINAS (kalangoos/scripts/duas-vms.sh): com MAQUINAS=1, KALANGO_SSH_A="ssh … a" e KALANGO_SSH_B="ssh … b"
+# (e KALANGO_IP_B, o endereço da B na rede entre as duas), o lado compartilhado roda na B e o probe na A, de verdade,
+# cada um com o seu Xvfb/pasta pessoal descartável; o servidor escuta na rede (--lan) e o alvo usa o endereço da B.
+# MAQUINAS=wayland: o lado compartilhado captura a sessão niri de verdade da B (WAYLAND_DISPLAY=wayland-1, captura e
+# entrada por wlr, como no sistema instalado) em vez de um Xvfb.
+# Valem os modos direto, tunel, codigo, aprovar, fixa, duasetapas, gravar, defesas e impostor.
 set -u
 PROBE_EXTRA=()
 MODO=${1:-direto}
@@ -28,6 +34,14 @@ source kalangoos/scripts/env.sh
 B=${KALANGO_CORE:-$PWD/target/debug/kalango-remote-core}
 T=$(mktemp -d /tmp/kalango-remote-teste-XXXX)
 mkdir -p "$T/srv" "$T/cli"
+if [ -n "${MAQUINAS:-}" ]; then
+  B=${KALANGO_CORE:-/usr/lib/kalango/remote/kalango-remote-core}
+  SESS_ENV=
+  if [ "$MAQUINAS" = wayland ]; then SESS_ENV="WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/\$(id -u) XDG_CURRENT_DESKTOP=niri NIRI_SOCKET=\$(ls /run/user/\$(id -u)/niri.*.sock | head -1)"; QUADROS=${QUADROS:-3}; fi
+  [ "$MAQUINAS" = wayland ] || $KALANGO_SSH_B "pgrep -x Xvfb > /dev/null || (setsid Xvfb $DISP -screen 0 800x600x24 > /dev/null 2>&1 &) ; sleep 2"
+  $KALANGO_SSH_B "mkdir -p $T/srv"
+  $KALANGO_SSH_A "mkdir -p $T/cli"
+fi
 NIRI_ENV=()
 if [ "$MODO" = niri ]; then
   source target/niri-aninhado/env || { echo "rode kalangoos/scripts/niri-aninhado.sh antes"; exit 2; }
@@ -35,6 +49,11 @@ if [ "$MODO" = niri ]; then
   DISP=$DISPLAY
 fi
 lado() { # pasta pessoal descartável + instância própria
+  if [ -n "${MAQUINAS:-}" ]; then   # srv roda na B, o resto (cli) na A
+    local ssh_=$KALANGO_SSH_A extra=; if [ "$1" = srv ] || [ "$1" = ruim ]; then ssh_=$KALANGO_SSH_B; extra=$SESS_ENV; fi
+    $ssh_ "mkdir -p $T/$1; env LD_LIBRARY_PATH=/usr/lib/kalango/remote HOME=$T/$1 XDG_CONFIG_HOME=$T/$1/config XDG_DATA_HOME=$T/$1/data XDG_CACHE_HOME=$T/$1/cache XDG_SESSION_TYPE=x11 RUSTDESK_FORCED_DISPLAY_SERVER=x11 DISPLAY=$DISP $extra KALANGO_CORE_TEXT=1 KALANGO_REMOTE_INSTANCE=teste$1$$ $(printf '%q ' "${@:2}")"
+    return
+  fi
   env -u WAYLAND_DISPLAY "${NIRI_ENV[@]}" HOME="$T/$1" XDG_CONFIG_HOME="$T/$1/config" XDG_DATA_HOME="$T/$1/data" XDG_CACHE_HOME="$T/$1/cache" \
     XDG_SESSION_TYPE=x11 DISPLAY="$DISP" KALANGO_CORE_TEXT=1 KALANGO_REMOTE_INSTANCE="teste$1$$" "${@:2}"
 }
@@ -73,17 +92,25 @@ case "$MODO" in
     MOVIMENTO=1 ;;
   *) echo "modo desconhecido: $MODO"; exit 2 ;;
 esac
+# (entre duas máquinas, o servidor escuta na rede em vez de só no loopback; o túnel e o código já são assim)
+[ -n "${MAQUINAS:-}" ] && [ "$MODO" != tunel ] && [ "$MODO" != codigo ] && ARGS+=(--lan --port 0)
+# roda no lado compartilhado (a B entre duas máquinas), com cada argumento escapado para os dois shells
+onsrv() { if [ -n "${MAQUINAS:-}" ]; then $KALANGO_SSH_B "$(printf '%q ' "$@")"; else "$@"; fi; }
 mkfifo "$T/entrada"
 # MOVIMENTO=1: uma bola animada a 30 qps na tela compartilhada (o RustDesk só manda quadros quando algo muda)
 if [ "${MOVIMENTO:-0}" = 1 ]; then
-  DISPLAY="$DISP" gst-launch-1.0 -q videotestsrc pattern=ball ! video/x-raw,width=800,height=600,framerate=30/1 ! ximagesink > /dev/null 2>&1 &
-  GP=$!
+  if [ -n "${MAQUINAS:-}" ]; then
+    $KALANGO_SSH_B "DISPLAY=$DISP setsid gst-launch-1.0 -q videotestsrc pattern=ball ! video/x-raw,width=800,height=600,framerate=30/1 ! ximagesink > /dev/null 2>&1 < /dev/null &"
+  else
+    DISPLAY="$DISP" gst-launch-1.0 -q videotestsrc pattern=ball ! video/x-raw,width=800,height=600,framerate=30/1 ! ximagesink > /dev/null 2>&1 &
+    GP=$!
+  fi
 fi
 lado srv "$B" serve "${ARGS[@]}" < "$T/entrada" > "$T/serve.out" 2> "$T/serve.err" &
 SP=$!
 exec 3> "$T/entrada"   # mantém a entrada do servidor aberta
 [ -n "${SETUP:-}" ] && echo "$SETUP" >&3   # --setup-stdin: o primeiro pacote é a configuração
-trap 'exec 3>&-; [ "$MODO" = servidor ] && docker rm -f "kr-teste-hbbs-$$" "kr-teste-hbbr-$$" > /dev/null 2>&1; kill $SP ${GP:-} ${JP:-} 2>/dev/null; wait $SP 2>/dev/null; echo "registros em $T"' EXIT
+trap '[ -n "${MAQUINAS:-}" ] && $KALANGO_SSH_B "pkill -x gst-launch-1.0" 2>/dev/null; exec 3>&-; [ "$MODO" = servidor ] && docker rm -f "kr-teste-hbbs-$$" "kr-teste-hbbr-$$" > /dev/null 2>&1; kill $SP ${GP:-} ${JP:-} 2>/dev/null; wait $SP 2>/dev/null; echo "registros em $T"' EXIT
 campo() { python3 -c "import json,sys
 for l in open('$T/serve.out'):
     d=json.loads(l)
@@ -96,6 +123,7 @@ for l in open('$T/serve.out'):
 print(p)"; }
 for _ in $(seq 60); do grep -q '"listening"' "$T/serve.out" && break; sleep 0.5; done
 PW=$(campo listening password); ID=$(campo listening id); PK=$(campo listening pk); ADDR=$(campo listening addr); CODE=$(campo listening code)
+[ -n "${MAQUINAS:-}" ] && ADDR=${KALANGO_IP_B:?}:${ADDR##*:}
 case "$MODO" in
   direto) ALVO="https://$ADDR/#k=$ID.$PK" ;;
   codigo) ALVO="$CODE" ;;
@@ -112,6 +140,11 @@ case "$MODO" in
     ALVO=$(campo tunnel link) ;;   # o núcleo só anuncia o link quando o nome já resolve
 esac
 echo "alvo: $ALVO  código: $CODE"
+# o núcleo se protege de depuradores do mesmo usuário (prctl PR_SET_DUMPABLE 0): o kalangod só dá a tela a quem fez isso,
+# e os arquivos de /proc/<pid> de um processo assim são do root
+CPID=$(onsrv pgrep -n -f "[k]alango-remote-core serve")
+if [ -n "$CPID" ] && [ "$(onsrv stat -c %u /proc/$CPID/status)" = 0 ]; then echo "ok: o núcleo ($CPID) não é depurável (/proc/$CPID/status é do root)"
+else echo "FALHOU: o núcleo ($CPID) continua depurável pelo mesmo usuário (falta o prctl PR_SET_DUMPABLE 0)"; exit 1; fi
 if [ "$MODO" = fixa ]; then
   # a senha de uso único, com "perguntar antes" ligado, continua esperando aprovação: nenhum quadro
   lado cli timeout 60 "$B" probe "$ALVO" --password "$PW" --frames 1 --timeout 8 > "$T/uso-unico.out" 2> "$T/uso-unico.err"
@@ -171,13 +204,15 @@ if [ "$MODO" = aprovar ]; then
   grep '"event":"connection"' "$T/serve.out"
   if [ $R -eq 0 ] && grep -q '"secured":true' "$T/probe.out" && [ -f "$T/aprovado-em" ]; then
     # o primeiro quadro chegou depois da aprovação?
-    python3 - "$T" "$INICIO" <<'PY' && exit 0
+    # (SÓ entre duas máquinas: o relógio do probe começa depois do ssh que o abre, uns 0,4 s depois de INICIO, então o primeiro
+# quadro parece chegar antes da aprovação; 1 s de folga cobre isso e ainda pega quadros sem aprovação, que chegariam em ~1 s)
+python3 - "$T" "$INICIO" "${MAQUINAS:+1.0}" <<'PY' && exit 0
 import json, sys
-t = sys.argv[1]; inicio = float(sys.argv[2]); aprovado = float(open(t + "/aprovado-em").read())
+t = sys.argv[1]; inicio = float(sys.argv[2]); folga = float(sys.argv[3] or 0); aprovado = float(open(t + "/aprovado-em").read())
 ff = [json.loads(l) for l in open(t + "/probe.out") if '"first_frame"' in l][0]
 quando = inicio + ff["after_ms"] / 1000
 print(f"aprovado {aprovado - inicio:.1f} s depois do início; primeiro quadro {quando - inicio:.1f} s")
-if quando < aprovado: sys.exit(1)
+if quando + folga < aprovado: sys.exit(1)
 print("OK: nenhum quadro antes da aprovação; sessão cifrada depois dela")
 PY
   fi
@@ -231,12 +266,19 @@ print(v)")
 fi
 if [ "$MODO" = gravar ]; then
   sleep 2
-  ARQ=$(find "$T/srv/Vídeos/Kalango Remote" -type f -size +1k 2>/dev/null | head -1)
-  PD=$(stat -c %a "$T/srv/Vídeos/Kalango Remote"); PA=$(stat -c %a "$ARQ" 2>/dev/null)
+  # (a gravação fica no lado compartilhado, que entre duas máquinas é a B: cada argumento é escapado para os dois shells)
+  DIRG="$T/srv/Vídeos/Kalango Remote"
+  ARQ=$(onsrv find "$DIRG" -type f -size +1k | head -1)
+  [ -n "$ARQ" ] || { echo "FALHOU: nenhum vídeo gravado em $DIRG"; onsrv ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1; }
+  PD=$(onsrv stat -c %a "$DIRG") || { echo "FALHOU: stat da pasta da gravação falhou"; exit 1; }
+  PA=$(onsrv stat -c %a "$ARQ") || { echo "FALHOU: stat do vídeo falhou"; exit 1; }
+  TAM=$(onsrv stat -c %s "$ARQ") || { echo "FALHOU: stat do tamanho falhou"; exit 1; }
+  echo "modos: pasta $PD, arquivo $PA; tamanho $TAM bytes"
   [ "$PD" = 700 ] && [ "$PA" = 600 ] || { echo "FALHOU: permissões da gravação: pasta $PD arquivo $PA (esperado 700 e 600)"; exit 1; }
+  [ "${TAM:-0}" -gt 1024 ] || { echo "FALHOU: vídeo pequeno demais ($TAM bytes)"; exit 1; }
   grep -q "being recorded" "$T/probe.out" || { echo "FALHOU: quem foi gravado não recebeu o aviso"; exit 1; }
-  if [ $R -eq 0 ] && [ -n "$ARQ" ]; then echo "OK: a sessão recebida foi gravada em $ARQ ($(stat -c %s "$ARQ") bytes)"; exit 0; fi
-  echo "FALHOU: nenhum vídeo gravado"; ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1
+  if [ $R -eq 0 ]; then echo "OK: a sessão recebida foi gravada em $ARQ ($TAM bytes, ${MAQUINAS:+na B, }modos $PD/$PA)"; exit 0; fi
+  echo "FALHOU: a sessão terminou com erro (probe saiu $R)"; exit 1
 fi
 if [ "$MODO" = impostor ]; then
   if [ $R -ne 0 ] && grep -q "does not match the invite" "$T/probe.out" && ! grep -q '"first_frame"' "$T/probe.out"; then

@@ -1,0 +1,7 @@
+alvo: https://192.168.77.2:36221/#k=11141122.TfJaCiJTTdDtU-F4laJp-TQffcDpRPm0O098a5hZnio  código: JVYD-9K3G
+ok: setup inválido faz o núcleo sair com erro
+ok: o código usado não vale de novo
+ok: 5 senhas erradas bloqueiam o compartilhamento todo e o app é avisado
+ok: setup inválido com o compartilhamento aberto derruba o núcleo e diz o motivo
+OK: defesas
+registros em /tmp/kalango-remote-teste-dNfw

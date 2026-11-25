@@ -1,0 +1,23 @@
+1. importar
+1 servidores, 0 chaves conhecidas, 1 identidades
+   ok: vm-b importado (vm-b)
+2. chave desconhecida
+   unknown ED25519 SHA256:zdKQjsAfXBTMvAZ0Xl9zqfdOV7hzcqeCU9rrHYN1FPQ
+   ok: recusou sem confiar
+3. confiar e conectar
+   ok: conectou pelo sshd da B com a chave do cofre
+4. Mosh, com a rede interrompida
+["mosh","--ssh=ssh -F /dev/null -o UserKnownHostsFile=/tmp/kalango-remote-ssh2-XXXX/config/kalango/remote/known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -i /tmp/kalango-r
+   /usr/bin/mosh
+   /usr/bin/mosh-client
+   B: /usr/bin/mosh-server
+   (rede da B caída)
+   (rede da B de volta)
+   instantes em que a A viu cada número (s): 1@0.5 2@1.3 3@2.3 4@3.3 5@4.3 6@5.3 7@6.3 8@16.1 9@16.1 10@16.1 11@16.1 12@16.1 13@16.1 14@16.1 15@16.1 16@16.1 17@16.6 18@17.6 19@18.6 20@19.6 21@20.6 22@21.7
+   números vistos pela A: 1 a 22; maior intervalo entre dois: 9.8 s (entre 7 e 8)
+   ok: a sessão Mosh ficou sem receber nada por >= 7,5 s, voltou sozinha e terminou a contagem
+5. a chave do servidor muda
+   changed ED25519 SHA256:gRTyVeE88UeFtRKZ7psxfOwArVEIomFwllYa+00Co84
+   ok: bloqueado (ssh e mosh)
+OK
+(chave de host da B restaurada: SHA256:zdKQjsAfXBTMvAZ0Xl9zqfdOV7hzcqeCU9rrHYN1FPQ, igual à original; rede da B no ar; pastas do teste apagadas)

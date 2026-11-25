@@ -65,7 +65,6 @@ pub fn prune_recordings(dir: &Path, now: SystemTime, days: u64) -> usize {
     gone
 }
 
-/// Locks this computer's screen (logind: the same path as the power menu).
 /// The arguments of `kalango-remote-core serve` for these settings. The code on the card is found on the same network
 /// through a UDP broadcast the core answers only when it listens on the network (`--lan`); in the default mode (the
 /// Cloudflare tunnel) that used to be off, so typing the code on a computer next door said "nobody on this network".
@@ -88,6 +87,7 @@ pub fn serve_args(s: &Settings) -> Vec<String> {
     args
 }
 
+/// Locks this computer's screen (logind: the same path as the power menu).
 pub fn lock_screen() {
     // the test profile (`KALANGO_REMOTE_COFRE=arquivo`) never locks the real session of whoever runs the tests
     if std::env::var("KALANGO_REMOTE_COFRE").as_deref() == Ok("arquivo") {

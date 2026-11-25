@@ -1,6 +1,6 @@
-alvo: https://192.168.77.2:34673/#k=11141122.MSDnSRG3ExsS3NzCwWPOAtk5pnuPM7BEP19nTi1wxuY  código: 1EMW-XV4C
-{"addr":"192.168.77.2:34673","event":"resolved","pinned":true}
-{"after_ms":126,"height":600,"probe":"first_frame","width":800}
+alvo: https://192.168.77.2:43961/#k=11141122.iyF-YdQjoCWz_l3c2JNz7AZ2wqioBquUxHfWV24NjnE  código: ZJ1T-JNTH
+{"addr":"192.168.77.2:43961","event":"resolved","pinned":true}
+{"after_ms":198,"height":600,"probe":"first_frame","width":800}
 {"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
 {"event":"permission","name":"clipboard","value":false}
 {"event":"permission","name":"audio","value":false}
@@ -11,9 +11,8 @@ alvo: https://192.168.77.2:34673/#k=11141122.MSDnSRG3ExsS3NzCwWPOAtk5pnuPM7BEP19
 {"conn_type":"DEFAULT_CONN","event":"connected"}
 {"event":"chat","text":"This session is being recorded on the shared computer."}
 {"event":"closed"}
-{"dropped":2,"fps_after_first":14.7,"frames":30,"probe":"done"}
-tempo total: 2.9 s
-stat: cannot stat '/tmp/kalango-remote-teste-eQYO/srv/Vídeos/Kalango': No such file or directory (os error 2)
-stat: cannot stat 'Remote/incoming_11141122_20261125010420377_display0_vp8.webm': No such file or directory (os error 2)
-OK: a sessão recebida foi gravada em /tmp/kalango-remote-teste-eQYO/srv/Vídeos/Kalango Remote/incoming_11141122_20261125010420377_display0_vp8.webm (na B,  bytes)
-registros em /tmp/kalango-remote-teste-eQYO
+{"dropped":0,"fps_after_first":20.1,"frames":30,"probe":"done"}
+tempo total: 2.3 s
+modos: pasta 700, arquivo 600; tamanho 5682 bytes
+OK: a sessão recebida foi gravada em /tmp/kalango-remote-teste-XXXX/srv/Vídeos/Kalango Remote/incoming_11141122_20261125013510924_display0_vp8.webm (5682 bytes, na B, modos 700/600)
+registros em /tmp/kalango-remote-teste-XXXX

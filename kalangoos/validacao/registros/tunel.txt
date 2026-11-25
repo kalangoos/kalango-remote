@@ -1,5 +1,5 @@
-alvo: https://wichita-psychiatry-livecam-lady.trycloudflare.com/#k=11141122.Srti29mc1d0Bx6Owo7Dh9_P3-zQHUH48y-vcBriD42A  código: FK25-X1J8
-{"event":"step","host":"wichita-psychiatry-livecam-lady.trycloudflare.com","step":"tunnel"}
+alvo: https://<tunel-descartado>.trycloudflare.com/#k=11141122.Srti29mc1d0Bx6Owo7Dh9_P3-zQHUH48y-vcBriD42A  código: FK25-X1J8
+{"event":"step","host":"<tunel-descartado>.trycloudflare.com","step":"tunnel"}
 {"addr":"127.0.0.1:45955","event":"resolved","pinned":true}
 {"direct":true,"event":"connection_type","secured":true,"stream":"TCP"}
 {"event":"permission","name":"clipboard","value":false}

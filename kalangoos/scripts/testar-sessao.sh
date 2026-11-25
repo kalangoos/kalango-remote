@@ -197,7 +197,8 @@ if [ "$MODO" = aprovar ]; then
   grep '"event":"connection"' "$T/serve.out"
   if [ $R -eq 0 ] && grep -q '"secured":true' "$T/probe.out" && [ -f "$T/aprovado-em" ]; then
     # o primeiro quadro chegou depois da aprovação?
-    # (entre duas máquinas o relógio do probe começa depois do ssh que o abre: 1 s de folga; sem aprovação os quadros chegariam em ~1 s)
+    # (SÓ entre duas máquinas: o relógio do probe começa depois do ssh que o abre, uns 0,4 s depois de INICIO, então o primeiro
+# quadro parece chegar antes da aprovação; 1 s de folga cobre isso e ainda pega quadros sem aprovação, que chegariam em ~1 s)
 python3 - "$T" "$INICIO" "${MAQUINAS:+1.0}" <<'PY' && exit 0
 import json, sys
 t = sys.argv[1]; inicio = float(sys.argv[2]); folga = float(sys.argv[3] or 0); aprovado = float(open(t + "/aprovado-em").read())
@@ -258,17 +259,20 @@ print(v)")
 fi
 if [ "$MODO" = gravar ]; then
   sleep 2
-  if [ -n "${MAQUINAS:-}" ]; then   # a gravação fica na B: confere lá e traz as permissões
-    ARQ=$($KALANGO_SSH_B "find '$T/srv/Vídeos/Kalango Remote' -type f -size +1k 2>/dev/null | head -1")
-    PD=$($KALANGO_SSH_B "stat -c %a '$T/srv/Vídeos/Kalango Remote'"); PA=$($KALANGO_SSH_B "stat -c %a '$ARQ' 2>/dev/null")
-  else
-  ARQ=$(find "$T/srv/Vídeos/Kalango Remote" -type f -size +1k 2>/dev/null | head -1)
-  PD=$(stat -c %a "$T/srv/Vídeos/Kalango Remote"); PA=$(stat -c %a "$ARQ" 2>/dev/null)
-  fi
+  # (a gravação fica no lado compartilhado, que entre duas máquinas é a B: cada argumento é escapado para os dois shells)
+  onsrv() { if [ -n "${MAQUINAS:-}" ]; then $KALANGO_SSH_B "$(printf '%q ' "$@")"; else "$@"; fi; }
+  DIRG="$T/srv/Vídeos/Kalango Remote"
+  ARQ=$(onsrv find "$DIRG" -type f -size +1k | head -1)
+  [ -n "$ARQ" ] || { echo "FALHOU: nenhum vídeo gravado em $DIRG"; onsrv ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1; }
+  PD=$(onsrv stat -c %a "$DIRG") || { echo "FALHOU: stat da pasta da gravação falhou"; exit 1; }
+  PA=$(onsrv stat -c %a "$ARQ") || { echo "FALHOU: stat do vídeo falhou"; exit 1; }
+  TAM=$(onsrv stat -c %s "$ARQ") || { echo "FALHOU: stat do tamanho falhou"; exit 1; }
+  echo "modos: pasta $PD, arquivo $PA; tamanho $TAM bytes"
   [ "$PD" = 700 ] && [ "$PA" = 600 ] || { echo "FALHOU: permissões da gravação: pasta $PD arquivo $PA (esperado 700 e 600)"; exit 1; }
+  [ "${TAM:-0}" -gt 1024 ] || { echo "FALHOU: vídeo pequeno demais ($TAM bytes)"; exit 1; }
   grep -q "being recorded" "$T/probe.out" || { echo "FALHOU: quem foi gravado não recebeu o aviso"; exit 1; }
-  if [ $R -eq 0 ] && [ -n "$ARQ" ]; then echo "OK: a sessão recebida foi gravada em $ARQ (${MAQUINAS:+na B, }$(if [ -n "${MAQUINAS:-}" ]; then $KALANGO_SSH_B "stat -c %s '$ARQ'"; else stat -c %s "$ARQ"; fi) bytes)"; exit 0; fi
-  echo "FALHOU: nenhum vídeo gravado"; ls -R "$T/srv" | head; tail -5 "$T/serve.err"; exit 1
+  if [ $R -eq 0 ]; then echo "OK: a sessão recebida foi gravada em $ARQ ($TAM bytes, ${MAQUINAS:+na B, }modos $PD/$PA)"; exit 0; fi
+  echo "FALHOU: a sessão terminou com erro (probe saiu $R)"; exit 1
 fi
 if [ "$MODO" = impostor ]; then
   if [ $R -ne 0 ] && grep -q "does not match the invite" "$T/probe.out" && ! grep -q '"first_frame"' "$T/probe.out"; then

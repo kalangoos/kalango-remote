@@ -23,13 +23,17 @@ virtual de camada 2, 192.168.77.1 e .2). Sem root no anfitrião. Para repetir: `
 | Verificação em duas etapas | `duasetapas` | OK: sem o código não abre; com o código abre | registros/ |
 | Defesas | `defesas` | OK: setup inválido derruba o núcleo; código usado não vale de novo; 5 erros travam | registros/ |
 | Impostor (chave diferente do convite) | `impostor` | OK: recusado | registros/ |
-| Gravação | GUI e `gravar` | OK: `.webm` 0600 em pasta 0700 na B; quem é gravado recebe o aviso | registros/ |
+| Gravação | GUI e `gravar` | OK: modos reais 700 (pasta) e 600 (arquivo) lidos na B por ssh, vídeo > 1 KiB; o teste falha se o `stat` falhar (mutante com pasta errada: FALHOU) | registros/gravar.txt |
 | Modo privacidade (patch 0012) | sessão sem supervisão com `privacy_black` | OK: monitor da B preto com a faixa "controlando", A continua vendo a tela real | capturas/02b-* |
 | SSH: chave desconhecida, confiar, conectar | `testar-ssh-mosh-duas-maquinas.sh`, sshd da B | OK: recusa sem confiar (`unknown`), conecta depois | registros/ssh-mosh.txt |
 | SSH: chave do servidor mudou | idem | OK: `changed` e conexão bloqueada | |
-| Mosh | app monta `mosh --ssh=…`; mosh-server da B | OK: a sessão abre e termina a contagem depois de a placa da B ficar 8 s fora | registros/ssh-mosh.txt |
+| Mosh | app monta `mosh --ssh=…`; mosh-server da B; a placa da B cai por 8 s | OK, com prova: a A viu os números 1 a 7 até 6,3 s, nada por 9,8 s, e os números 8 a 16 de uma vez a 16,1 s, quando a rede voltou; a contagem terminou (marcador calculado pela B, `FIM-MOSH-42`) | registros/ssh-mosh.txt |
 | Mosh: chave mudou | idem | OK: bloqueado | |
 | Plano do agente | | **Não testado** (precisa do agente e do modelo) | |
+
+> Correção de uma versão anterior deste teste: a primeira prova do Mosh procurava `FIM-MOSH` no log do `script`, e o
+> cabeçalho do log repete o comando, então ela passava mesmo com o Mosh morto (sem `TERM`, e sem tamanho de terminal).
+> Agora o marcador é calculado pela B e o teste mede, pelos tempos de cada pedaço recebido, o intervalo sem dados.
 
 ## Defeitos achados
 
@@ -39,8 +43,11 @@ virtual de camada 2, 192.168.77.1 e .2). Sem root no anfitrião. Para repetir: `
    "…/kalango-remote não é o Kalango Remote"; o núcleo repetia "no zwlr_screencopy_manager_v1". Confirmado nas VMs:
    com os dois caminhos em `/etc/kalango/kalangod.toml` a sessão mostra a tela. Corrigido o padrão (com teste).
 2. **O código da LAN só alcançava a placa da rota padrão** (`kalangoos/core/src/lan.rs`): a consulta ia só para
-   255.255.255.255, que sai pela interface da rota padrão. Com um segundo adaptador (cabo ao lado do Wi-Fi, VPN,
-   ponte do docker) o código não achava o computador. Agora a consulta vai também para o endereço de difusão de cada rede.
+   255.255.255.255, que sai pela interface da rota padrão. Com um segundo adaptador (cabo ao lado do Wi-Fi, uma
+   ponte de máquinas virtuais) o código não achava o computador. Agora a consulta vai também para o endereço de
+   difusão de cada rede ativa com difusão; ficam de fora: interfaces fora do ar, loopback, ponto a ponto (tun/wg),
+   redes /31 e /32 (sem endereço de difusão próprio) e as pontes do docker (`docker0`, `br-*`, `veth*`), onde ninguém
+   que compartilha um código está. Teste: `lan::tests::the_query_goes_to_every_real_network`.
 
 ## Mosh: onde o código supõe `mosh` no PATH
 

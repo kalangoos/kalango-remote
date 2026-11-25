@@ -815,17 +815,7 @@ impl Home {
         self.stop_sharing();
         let s = w.settings.borrow().clone();
         let lan = s.network == "lan";
-        let mut args = vec!["serve".to_string()];
-        if lan {
-            args.extend(["--no-tunnel".into(), "--lan".into()]);
-        } else if s.network == "server" {
-            // through the own server: no tunnel; the core registers there and the id is the code
-            args.push("--no-tunnel".into());
-        }
-        if s.ask_before {
-            args.push("--ask".into());
-        }
-        args.push("--setup-stdin".into());
+        let args = crate::access::serve_args(&s);
         let setup = crate::access::current_setup(&s);
         if setup.record_dir.is_some() {
             crate::access::prune_recordings(&crate::access::recordings_dir(), std::time::SystemTime::now(), crate::access::KEEP_RECORDINGS_DAYS);

@@ -66,6 +66,28 @@ pub fn prune_recordings(dir: &Path, now: SystemTime, days: u64) -> usize {
 }
 
 /// Locks this computer's screen (logind: the same path as the power menu).
+/// The arguments of `kalango-remote-core serve` for these settings. The code on the card is found on the same network
+/// through a UDP broadcast the core answers only when it listens on the network (`--lan`); in the default mode (the
+/// Cloudflare tunnel) that used to be off, so typing the code on a computer next door said "nobody on this network".
+/// With "prefer a direct connection on the same network" on, the tunnel mode listens on the network too (any port) and the
+/// tunnel stays: the password and, with "ask before", the approval are still needed, as in the tunnel.
+pub fn serve_args(s: &Settings) -> Vec<String> {
+    let mut args = vec!["serve".to_string()];
+    if s.network == "lan" {
+        args.extend(["--no-tunnel".into(), "--lan".into()]);
+    } else if s.network == "server" {
+        // through the own server: no tunnel; the core registers there and the id is the code
+        args.push("--no-tunnel".into());
+    } else if s.prefer_lan {
+        args.extend(["--lan".into(), "--port".into(), "0".into()]);
+    }
+    if s.ask_before {
+        args.push("--ask".into());
+    }
+    args.push("--setup-stdin".into());
+    args
+}
+
 pub fn lock_screen() {
     // the test profile (`KALANGO_REMOTE_COFRE=arquivo`) never locks the real session of whoever runs the tests
     if std::env::var("KALANGO_REMOTE_COFRE").as_deref() == Ok("arquivo") {
@@ -86,6 +108,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn the_code_works_on_the_same_network_in_the_default_mode_too() {
+        let mut s = Settings::default();
+        assert_eq!((s.network.as_str(), s.prefer_lan, s.ask_before), ("cloudflare", true, true));
+        // the default: the tunnel AND the network (so the UDP code answers), asked before every access
+        assert_eq!(serve_args(&s), ["serve", "--lan", "--port", "0", "--ask", "--setup-stdin"]);
+        s.prefer_lan = false;
+        assert_eq!(serve_args(&s), ["serve", "--ask", "--setup-stdin"], "tunnel only when the direct connection is not wanted");
+        s.network = "lan".into();
+        assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--lan", "--ask", "--setup-stdin"]);
+        s.network = "server".into();
+        s.ask_before = false;
+        s.prefer_lan = true;
+        assert_eq!(serve_args(&s), ["serve", "--no-tunnel", "--setup-stdin"], "the own server is never opened to the network");
     }
 
     #[test]

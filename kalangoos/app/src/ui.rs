@@ -314,12 +314,18 @@ pub fn on_width(widget: &impl IsA<gtk::Widget>, f: impl Fn(i32) + 'static) {
 
 /// A short message at the bottom of a window ("Código copiado"), gone after 2.4 s.
 pub fn toast(overlay: &gtk::Overlay, text: &str) {
+    toast_for(overlay, text, std::time::Duration::from_millis(2400));
+}
+
+/// A notice that stays `duration` (a refusal with its reason needs time to be read).
+pub fn toast_for(overlay: &gtk::Overlay, text: &str, duration: std::time::Duration) {
     let l = label(text, "kr-toast");
     l.set_halign(Align::Center);
     l.set_valign(Align::End);
     l.set_margin_bottom(24);
     // a long one (a refusal with its reason) wraps inside the window instead of running past its edges
     l.set_wrap(true);
+    l.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     l.set_max_width_chars(56);
     l.set_justify(gtk::Justification::Center);
     l.set_margin_start(24);
@@ -327,7 +333,7 @@ pub fn toast(overlay: &gtk::Overlay, text: &str) {
     l.set_can_target(false);
     overlay.add_overlay(&l);
     let o = overlay.clone();
-    glib::timeout_add_local_once(std::time::Duration::from_millis(2400), move || o.remove_overlay(&l));
+    glib::timeout_add_local_once(duration, move || o.remove_overlay(&l));
 }
 
 #[cfg(test)]

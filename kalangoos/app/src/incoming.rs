@@ -83,7 +83,8 @@ impl Incoming {
     fn refuse(&self, id: i32, why: &str) {
         self.send(json!({"cmd": "close", "id": id}));
         if let Some(w) = Window::get() {
-            w.toast(&trf("Access refused by the system: {why}", &[("why", why.to_owned())]));
+            // longer than a short notice: it explains why, and is easy to miss
+            w.toast_for(&trf("Access refused by the system: {why}", &[("why", refusal_reason(why))]), std::time::Duration::from_secs(6));
         }
     }
 
@@ -101,8 +102,16 @@ impl Incoming {
     /// started or ended): the cover comes and goes at once.
     pub fn refresh_grant(&self) {
         if !self.active.borrow().is_empty() {
-            // a refusal here ends the session through kalangod itself (it stops the core)
-            let _ = self.grant(self.last_control.get());
+            // a refused new grant does not end the sessions by itself: kalangod's `allow` returns the error before it
+            // touches the earlier grant, and its once-a-second recheck (`prune`/`still_safe` in kalangod's
+            // remote_control.rs) looks only at the core, not at this app. So they are closed here and the grant dropped.
+            if let Some(why) = self.grant(self.last_control.get()) {
+                let ids: Vec<i32> = self.active.borrow().keys().copied().collect();
+                for id in ids {
+                    self.refuse(id, &why);
+                }
+                self.revoke();
+            }
         }
     }
 
@@ -565,6 +574,17 @@ impl Home {
     }
 }
 
+/// kalangod's reason, at most ~200 characters: the notice must fit in a window.
+fn refusal_reason(why: &str) -> String {
+    const MAX: usize = 200;
+    if why.chars().count() <= MAX {
+        return why.to_owned();
+    }
+    let mut s: String = why.chars().take(MAX).collect();
+    s.push('…');
+    s
+}
+
 /// The refusal of a grant: only when kalangod is there (outside KalangoOS there is none and the compositor decides).
 fn grant_refusal(result: Result<(), String>, kalangod_present: bool) -> Option<String> {
     match result {
@@ -583,6 +603,33 @@ mod tests {
         assert_eq!(grant_refusal(Err("dumpable".into()), true), Some("dumpable".into()));
         // no kalangod (another distribution): nothing to ask, the session goes on
         assert_eq!(grant_refusal(Err("No such file or directory".into()), false), None);
+    }
+
+    #[test]
+    fn a_long_reason_is_cut() {
+        assert_eq!(refusal_reason("dumpable"), "dumpable");
+        let long = "x".repeat(500);
+        let cut = refusal_reason(&long);
+        assert_eq!(cut.chars().count(), 201);
+        assert!(cut.ends_with('…'));
+    }
+
+    // every refusal closes the connection: a refused session must not stay open waiting for a picture
+    #[test]
+    fn every_refusal_closes_the_connection() {
+        let src = include_str!("incoming.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let body = |start: &str| {
+            let b = &code[code.find(start).unwrap_or_else(|| panic!("{start}"))..];
+            b[..b.find("\n    }\n").unwrap()].to_owned()
+        };
+        assert!(body("    fn refuse(&self, id: i32, why: &str) {").contains(r#"self.send(json!({"cmd": "close", "id": id}));"#), "refuse must close the connection");
+        let authorize = body("    fn authorize(&self,");
+        assert!(authorize.contains("if let Some(why) = self.grant(keyboard) {\n            self.refuse(id, &why);\n            return false;"), "authorize must refuse before authorizing");
+        assert!(code.contains("Some(why) => self.refuse(id, &why),"), "a session allowed without the dialog must be refused too");
+        assert!(body("    pub fn refresh_grant(&self) {").contains("self.refuse(id, &why);"), "a refused new grant must close the sessions");
+        assert!(code.contains("let allowed = me.authorize(") && code.contains("if allowed && "), "the dialog's banner waits for authorize");
+        assert_eq!(code.matches("self.refuse(").count(), 3, "every refusal site is checked here");
     }
 
     // the banner "… is controlling this computer" only for a session that got the permission

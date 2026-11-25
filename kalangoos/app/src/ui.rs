@@ -318,6 +318,12 @@ pub fn toast(overlay: &gtk::Overlay, text: &str) {
     l.set_halign(Align::Center);
     l.set_valign(Align::End);
     l.set_margin_bottom(24);
+    // a long one (a refusal with its reason) wraps inside the window instead of running past its edges
+    l.set_wrap(true);
+    l.set_max_width_chars(56);
+    l.set_justify(gtk::Justification::Center);
+    l.set_margin_start(24);
+    l.set_margin_end(24);
     l.set_can_target(false);
     overlay.add_overlay(&l);
     let o = overlay.clone();
